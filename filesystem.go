@@ -7,12 +7,16 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -30,12 +34,79 @@ type HelloRoot struct {
 // Readir
 // Readdirplus
 // Stat
-
-func (r *HelloRoot) OnAdd(ctx context.Context) {
-	//
-	for _, f := range r.Directory {
-
+// HeaderToFileInfo fills a fuse.Attr struct from a tar.Header.
+func HeaderToFileInfo(h *tar.Header) fuse.Attr {
+	out := fuse.Attr{
+		Mode: uint32(h.Mode),
+		Size: uint64(h.Size),
+		Owner: fuse.Owner{
+			Uid: uint32(h.Uid),
+			Gid: uint32(h.Gid),
+		},
 	}
+	out.SetTimes(&h.AccessTime, &h.ModTime, &h.ChangeTime)
+
+	return out
+}
+func (r *HelloRoot) OnAdd(ctx context.Context) {
+	//take a tarball, save filepath, hash content and save to a map
+	//use the hash as the file location. hash should be like 10 chars long
+	reader := tar.NewReader(r.rc)
+	defer r.rc.Close()
+
+	var longName *string
+	for {
+		header, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("err %v", err)
+			break
+		}
+
+		if header.Typeflag == 'L' {
+			buf := bytes.NewBuffer(make([]byte, 0, header.Size))
+			io.Copy(buf, reader)
+			s := buf.String()
+			longName = &s
+			continue
+		}
+
+		if longName != nil {
+			header.Name = *longName
+			longName = nil
+		}
+
+		buf := bytes.NewBuffer(make([]byte, 0, header.Size))
+		io.Copy(buf, reader)
+		dir, base := filepath.Split(filepath.Clean(header.Name))
+
+		p := r.EmbeddedInode()
+		for _, comp := range strings.Split(dir, "/") {
+			if len(comp) == 0 {
+				continue
+			}
+			ch := p.GetChild(comp)
+			if ch != nil {
+				p = ch
+				continue
+			}
+
+			ch = p.NewPersistentInode(ctx, &fs.Inode{}, fs.StableAttr{Mode: syscall.S_IFDIR})
+			p.AddChild(comp, ch, false)
+		}
+
+		attr := HeaderToFileInfo(header)
+
+		switch header.Typeflag {
+		case tar.TypeReg, tar.TypeRegA:
+			df := &fs.MemRegularFile{}
+			df.Attr = attr
+			p.AddChild(base, r.NewPersistentInode(ctx, df, fs.StableAttr{}), false)
+		}
+	}
+
 	ch := r.NewPersistentInode(
 		ctx, &file{Data: []byte("hello world")}, fs.StableAttr{Ino: 2})
 	r.AddChild("file.txt", ch, false)
