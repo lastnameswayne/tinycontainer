@@ -29,8 +29,9 @@ import (
 
 type HelloRoot struct {
 	fs.Inode
-	rc     io.ReadCloser
-	KeyDir map[string]string
+	rc      io.ReadCloser
+	KeyDir  map[string]string
+	FileMap map[string]*file
 }
 
 // Open
@@ -115,13 +116,16 @@ func (r *HelloRoot) OnAdd(ctx context.Context) {
 			encoded := hex.EncodeToString(hash)
 			r.KeyDir[filepathStr] = encoded
 
+			file := &file{
+				Attr:   attr,
+				Data:   []byte("hello world"),
+				FileID: filepathStr,
+				Themap: &r.KeyDir,
+			}
+			r.FileMap[filepathStr] = file
+
 			df := r.NewPersistentInode(
-				ctx, &file{
-					Attr:   attr,
-					Data:   []byte("hello world"),
-					FileID: filepathStr,
-					Themap: &r.KeyDir,
-				},
+				ctx, file,
 				fs.StableAttr{Ino: 0})
 
 			p.AddChild(encoded, df, false)
@@ -145,6 +149,15 @@ func (f *HelloRoot) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint
 
 func (f *HelloRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("root reading file", name)
+	for k, _ := range f.FileMap {
+		fmt.Println("key", k)
+	}
+	file, ok := f.FileMap[name]
+	fmt.Println("found", ok)
+	if ok {
+		return f.NewPersistentInode(ctx, file, fs.StableAttr{}), 0
+	}
+
 	if ch := f.GetChild(name); ch != nil {
 		//RETURNS A CHILD (not a my own file) WHICH IS WHY MY LOOKUP IS NOT BEING CALLED
 		return ch, 0
@@ -152,6 +165,7 @@ func (f *HelloRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	return nil, syscall.ENOENT
 }
+
 func (f *file) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("file reading file", name)
 
@@ -177,7 +191,7 @@ type file struct {
 }
 
 func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	fmt.Println("CALLED OPEN")
+	fmt.Println("CALLED OPEN", f.FileID)
 	hash, ok := (*f.Themap)[f.FileID]
 	if !ok {
 		fmt.Println("its not in the map")
@@ -222,7 +236,6 @@ func main() {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
 	}
 	opts := &fs.Options{}
-	opts.Debug = true
 	cmd := exec.Command("umount", flag.Arg(0))
 	err := cmd.Run()
 	if err != nil {
@@ -233,7 +246,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	root := &HelloRoot{rc: f, KeyDir: map[string]string{}}
+	root := &HelloRoot{rc: f, KeyDir: map[string]string{}, FileMap: map[string]*file{}}
 	server, err := fs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
