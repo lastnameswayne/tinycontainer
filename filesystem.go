@@ -19,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -27,11 +26,16 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-type HelloRoot struct {
+type FS struct {
 	fs.Inode
-	rc      io.ReadCloser
-	KeyDir  map[string]string
-	FileMap map[string]*file
+	rc io.ReadCloser
+}
+
+type Directory struct {
+	fs.Inode
+	rc     io.ReadCloser
+	KeyDir map[string]string
+	File   *file
 }
 
 // Open
@@ -54,17 +58,37 @@ func HeaderToFileInfo(h *tar.Header) fuse.Attr {
 
 	return out
 }
-func (r *HelloRoot) OnAdd(ctx context.Context) {
-	//take a tarball, save filepath, hash content and save to a map
-	//use the hash as the file location. hash should be like 10 chars long
-	fmt.Println(r.rc)
-	reader := tar.NewReader(r.rc)
-	defer r.rc.Close()
 
-	var longName *string
+func (r *FS) OnAdd(ctx context.Context) {
+	p := r.EmbeddedInode()
+	rf := Directory{rc: r.rc, KeyDir: map[string]string{}}
+	p.AddChild("data", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+
+}
+
+var _ = (fs.NodeLookuper)((*Directory)(nil))
+
+func (r *Directory) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = 0755
+	return 0
+}
+
+func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	fmt.Println("called lookup on directory for", name)
+	for k, _ := range d.KeyDir {
+		fmt.Println("key", k)
+	}
+	hash, ok := d.KeyDir[name]
+	if ok {
+
+		fmt.Println("found on cache", hash)
+	}
+	reader := tar.NewReader(d.rc)
+
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
+			fmt.Println("END OF FILE")
 			break
 		}
 		if err != nil {
@@ -72,107 +96,53 @@ func (r *HelloRoot) OnAdd(ctx context.Context) {
 			break
 		}
 
-		if header.Typeflag == 'L' {
-			buf := bytes.NewBuffer(make([]byte, 0, header.Size))
-			io.Copy(buf, reader)
-			s := buf.String()
-			longName = &s
-			continue
-		}
-
-		if longName != nil {
-			header.Name = *longName
-			longName = nil
-		}
-
 		buf := bytes.NewBuffer(make([]byte, 0, header.Size))
 		io.Copy(buf, reader)
 		filepathStr := filepath.Clean(header.Name)
-		dir, _ := filepath.Split(filepathStr)
+		_, base := filepath.Split(filepathStr)
 
-		p := r.EmbeddedInode()
-		for _, comp := range strings.Split(dir, "/") {
-			if len(comp) == 0 {
-				continue
-			}
-			ch := p.GetChild(comp)
-			if ch != nil {
-				p = ch
-				continue
-			}
-
-			ch = p.NewPersistentInode(ctx, &fs.Inode{}, fs.StableAttr{Mode: syscall.S_IFDIR})
-			p.AddChild(comp, ch, false)
-		}
-
+		fmt.Println("filepath", filepathStr)
 		attr := HeaderToFileInfo(header)
 
-		switch header.Typeflag {
-		case tar.TypeReg, tar.TypeRegA:
-			h := sha1.New()
-			content := buf.Bytes()
-			h.Write(content)
-			hash := h.Sum(nil)
-			encoded := hex.EncodeToString(hash)
-			r.KeyDir[filepathStr] = encoded
+		if base == name {
+			if header.Typeflag == tar.TypeDir {
+				// Handle directory
+				dir := &Directory{
+					rc:     d.rc,
+					KeyDir: d.KeyDir,
+				}
+				return &dir.Inode, 0
+			} else {
+				// Handle files
+				h := sha1.New()
+				content := buf.Bytes()
+				h.Write(content)
+				hash := h.Sum(nil)
+				encoded := hex.EncodeToString(hash)
+				d.KeyDir[base] = encoded
 
-			file := &file{
-				Attr:   attr,
-				Data:   []byte("hello world"),
-				FileID: filepathStr,
-				Themap: &r.KeyDir,
+				file := &file{
+					Attr: attr,
+					Data: []byte("content"),
+					rc:   d.rc,
+				}
+
+				df := d.NewPersistentInode(
+					ctx, file,
+					fs.StableAttr{Ino: 0})
+
+				d.AddChild(encoded, df, false)
+
+				return &file.Inode, 0
 			}
-			r.FileMap[filepathStr] = file
-
-			df := r.NewPersistentInode(
-				ctx, file,
-				fs.StableAttr{Ino: 0})
-
-			p.AddChild(encoded, df, false)
 		}
 	}
-}
-
-func (r *HelloRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = 0755
-	return 0
-}
-
-func (f *HelloRoot) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	fmt.Println("CALLED OPEN ON ROOT")
-
-	// We don't return a filehandle since we don't really need
-	// one.  The file content is immutable, so hint the kernel to
-	// cache the data.
-	return nil, fuse.FOPEN_KEEP_CACHE, 0
-}
-
-func (f *HelloRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	fmt.Println("root reading file", name)
-	for k, _ := range f.FileMap {
-		fmt.Println("key", k)
-	}
-	file, ok := f.FileMap[name]
-	fmt.Println("found", ok)
-	if ok {
-		return f.NewPersistentInode(ctx, file, fs.StableAttr{}), 0
-	}
-
-	if ch := f.GetChild(name); ch != nil {
-		//RETURNS A CHILD (not a my own file) WHICH IS WHY MY LOOKUP IS NOT BEING CALLED
-		return ch, 0
-	}
-
-	return nil, syscall.ENOENT
-}
-
-func (f *file) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	fmt.Println("file reading file", name)
 
 	return nil, syscall.ENOENT
 }
 
 func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	fmt.Println("CALLING READ", f.Data)
 	end := int(off) + len(dest)
 	if end > len(f.Data) {
 		end = len(f.Data)
@@ -183,51 +153,35 @@ func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 // file is a file
 type file struct {
 	fs.Inode
-	Data   []byte
-	Attr   fuse.Attr
-	FileID string
-	mu     sync.Mutex
-	Themap *map[string]string
+	rc   io.ReadCloser
+	Data []byte
+	Attr fuse.Attr
+	mu   sync.Mutex
 }
 
 func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	fmt.Println("CALLED OPEN", f.FileID)
-	hash, ok := (*f.Themap)[f.FileID]
-	if !ok {
-		fmt.Println("its not in the map")
-		//call the NFS
-	}
-	fmt.Println("FOUND HASH")
-
+	fmt.Println("OPENING FILE", f.Data)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Data == nil {
-		rc, err := os.Open(hash)
+		fmt.Println("Data is nil, attempting to read")
+		// Uncomment and handle reading from the ReadCloser
+		content, err := io.ReadAll(f.rc)
 		if err != nil {
 			return nil, 0, syscall.EIO
 		}
-		content, err := io.ReadAll(rc)
-		if err != nil {
-			return nil, 0, syscall.EIO
-		}
-
+		f.rc.Close() // Ensure to close after reading
 		f.Data = content
 	}
 
-	// We don't return a filehandle since we don't really need
-	// one.  The file content is immutable, so hint the kernel to
-	// cache the data.
-	return nil, fuse.FOPEN_KEEP_CACHE, 0
+	return f, fuse.FOPEN_KEEP_CACHE, 0 // Return 'f' as the file handle
 }
 
-var _ = (fs.NodeGetattrer)((*HelloRoot)(nil))
-var _ = (fs.NodeOnAdder)((*HelloRoot)(nil))
-var _ = (fs.NodeOpener)((*HelloRoot)(nil))
+var _ = (fs.NodeOnAdder)((*FS)(nil))
+var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
-var _ = (fs.NodeLookuper)((*HelloRoot)(nil))
-var _ = (fs.NodeLookuper)((*file)(nil))
 
 func main() {
 
@@ -246,7 +200,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	root := &HelloRoot{rc: f, KeyDir: map[string]string{}, FileMap: map[string]*file{}}
+	defer f.Close()
+	opts.Debug = true
+	root := &FS{rc: f}
 	server, err := fs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
