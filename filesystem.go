@@ -36,6 +36,7 @@ type Directory struct {
 	rc     io.ReadCloser
 	KeyDir map[string]string
 	File   *file
+	attr   fuse.Attr
 }
 
 // Open
@@ -67,11 +68,6 @@ func (r *FS) OnAdd(ctx context.Context) {
 }
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
-
-func (r *Directory) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = 0755
-	return 0
-}
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on directory for", name)
@@ -110,6 +106,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				dir := &Directory{
 					rc:     d.rc,
 					KeyDir: d.KeyDir,
+					attr:   attr,
 				}
 				return &dir.Inode, 0
 			} else {
@@ -141,6 +138,20 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	return nil, syscall.ENOENT
 }
 
+func (f *Directory) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	fmt.Println("CALLING READ on directory")
+
+	return nil, 0
+}
+
+func (d *Directory) Attr() fuse.Attr {
+	if d.File == nil {
+		// root directory
+		return fuse.Attr{Mode: 0755}
+	}
+	return d.attr
+}
+
 func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	fmt.Println("CALLING READ", f.Data)
 	end := int(off) + len(dest)
@@ -159,6 +170,16 @@ type file struct {
 	mu   sync.Mutex
 }
 
+func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = 0777
+	out.Nlink = 1
+	out.Size = f.Attr.Size
+	const bs = 512
+	out.Blksize = bs
+	out.Blocks = (out.Size + bs - 1) / bs
+	return 0
+}
+
 func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	fmt.Println("OPENING FILE", f.Data)
 	f.mu.Lock()
@@ -174,11 +195,12 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 		f.Data = content
 	}
 
-	return f, fuse.FOPEN_KEEP_CACHE, 0 // Return 'f' as the file handle
+	return f, uint32(0), 0 // Return 'f' as the file handle
 }
 
 var _ = (fs.NodeOnAdder)((*FS)(nil))
 var _ = (fs.NodeLookuper)((*Directory)(nil))
+var _ = (fs.NodeReader)((*Directory)(nil))
 
 var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
