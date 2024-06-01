@@ -12,6 +12,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -86,16 +87,29 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 	hash, ok := d.KeyDir[name]
 	if ok {
+		if _, err := os.Stat("tarmnt/data/" + hash); errors.Is(err, os.ErrNotExist) {
+			//file does not exist on the SSD
+			fmt.Println("need to call NFS", hash)
+			//need to call NFS which has it
+			//we need a NFS with access to the tar file
+			//when we get the file from NFS we store it here in this FS
+			//this function should never read from the tar file directly
+			//the NFS should have all the entire docker image
+			//and then return the content here in bytes and we save it
+			return nil, syscall.ENOENT
+		}
+
 		//read file at hash
+		//check if we have that on local disk
 		fmt.Println("reading file tarmnt/data/", hash)
 		reader, err := os.Open("tarmnt/data/" + hash)
 		if err != nil {
-			return nil, 1
+			return nil, syscall.ENOENT
 		}
 
 		fmt.Println("reader")
 		file := &file{
-			// rc: reader,
+			rc: reader,
 		}
 
 		fmt.Println("new node")
@@ -107,6 +121,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 
 	fmt.Println("reading")
+	//"REMOTE CALL" think of it like this
 	reader := tar.NewReader(d.rc)
 	for {
 		fmt.Println("here")
@@ -162,6 +177,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				return df, 0
 			}
 		}
+		return nil, syscall.ENOENT
 	}
 
 	return nil, syscall.ENOENT
