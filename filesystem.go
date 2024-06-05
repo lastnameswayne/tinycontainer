@@ -143,7 +143,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 
 	fmt.Println("reading")
-	//"REMOTE CALL" think of it like this
 	reader := tar.NewReader(d.rc)
 	for {
 		fmt.Println("here")
@@ -199,7 +198,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				return df, 0
 			}
 		}
-		return nil, syscall.ENOENT
 	}
 
 	return nil, syscall.ENOENT
