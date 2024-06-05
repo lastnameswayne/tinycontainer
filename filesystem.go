@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,12 +30,12 @@ import (
 
 type FS struct {
 	fs.Inode
-	rc io.ReadCloser
+	rc io.Reader
 }
 
 type Directory struct {
 	fs.Inode
-	rc     io.ReadCloser
+	rc     io.Reader
 	KeyDir map[string]string
 	File   *file
 	attr   fuse.Attr
@@ -80,6 +81,8 @@ func (r *FS) OnAdd(ctx context.Context) {
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 
+//the worker executes the containers
+
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on directory for", d.attr.String(), name)
 	for k, _ := range d.KeyDir {
@@ -96,11 +99,30 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			//this function should never read from the tar file directly
 			//the NFS should have all the entire docker image
 			//and then return the content here in bytes and we save it
-			return nil, syscall.ENOENT
+			requestUrl := fmt.Sprintf("http://localhost:8443/get?filepath=%s", name)
+			res, err := http.Get(requestUrl)
+			if err != nil {
+				fmt.Printf("error making http request: %s\n", err)
+				os.Exit(1)
+			}
+			filecontent, err := io.ReadAll(res.Body)
+			if err != nil {
+				fmt.Printf("error reading body: %s\n", err)
+				os.Exit(1)
+			}
+
+			file := &file{
+				Data: filecontent,
+				rc:   d.rc,
+			}
+
+			df := d.NewPersistentInode(
+				ctx, file,
+				fs.StableAttr{Ino: 0})
+			return df, syscall.ENOENT
 		}
 
 		//read file at hash
-		//check if we have that on local disk
 		fmt.Println("reading file tarmnt/data/", hash)
 		reader, err := os.Open("tarmnt/data/" + hash)
 		if err != nil {
@@ -209,7 +231,7 @@ func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int6
 // file is a file
 type file struct {
 	fs.Inode
-	rc   io.ReadCloser
+	rc   io.Reader
 	Data []byte
 	Attr fuse.Attr
 	mu   sync.Mutex
@@ -236,7 +258,6 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 		if err != nil {
 			return nil, 0, syscall.EIO
 		}
-		f.rc.Close()
 		f.Data = content
 	}
 

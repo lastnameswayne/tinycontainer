@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/sha1"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -25,10 +29,6 @@ import (
 // Upload depends on if the worker reads the dockerfile on startup and then sends everything
 // over here. Or if tje
 // Fetch is always needed
-type Server interface {
-	Upload(filecontent []byte)
-	Fetch(filehash string) []byte
-}
 
 // should expose endpoints for the methods below
 // explre nginx
@@ -37,12 +37,25 @@ type server struct {
 	mutex  *sync.Mutex
 }
 
-const _dirName = "fileserver"
+func NewServer() server {
+	err := os.MkdirAll("./"+_dirName, os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+
+	return server{
+		keydir: map[string]string{},
+		mutex:  &sync.Mutex{},
+	}
+
+}
+
+const _dirName = "fileserverfiles"
 
 func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("filepath")
 	if key == "" {
-		http.Error(w, "Key is required", http.StatusBadRequest)
+		http.Error(w, "filepath is required", http.StatusBadRequest)
 		return
 	}
 
@@ -55,35 +68,62 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintln(w, hash)
+	file, err := os.OpenFile(_dirName+hash, os.O_RDWR, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	filecontent, err := io.ReadAll(file)
+
+	fmt.Fprintln(w, hash, filecontent)
+}
+
+// KeyValue represents the JSON structure for set requests
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"` // Base64 encoded string of the binary data
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Query().Get("key")
-	if key == "" {
-		http.Error(w, "Key is required", http.StatusBadRequest)
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
+	var kv KeyValue
+	err := json.NewDecoder(r.Body).Decode(&kv)
 	if err != nil {
-		http.Error(w, "Error reading body", http.StatusInternalServerError)
+		http.Error(w, "Error decoding JSON", http.StatusBadRequest)
 		return
 	}
 
-	value := string(body)
+	// Base64 decode the value
+	fileContent, err := base64.StdEncoding.DecodeString(kv.Value)
+	if err != nil {
+		http.Error(w, "Error decoding base64 value", http.StatusBadRequest)
+		return
+	}
+
+	err = os.WriteFile(_dirName+kv.Key, fileContent, os.ModePerm)
+
+	//hash of decodedValue
+	h := sha1.New()
+	h.Write(fileContent)
+	hash := h.Sum(nil)
+	encoded := hex.EncodeToString(hash)
 
 	s.mutex.Lock()
-	s.keydir[key] = value
+	s.keydir[_dirName+kv.Key] = encoded
 	s.mutex.Unlock()
+
+	err = os.WriteFile(_dirName+encoded, fileContent, 0666)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Fprintln(w, "Set successful")
 }
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/get", handleGet)
-	mux.HandleFunc("/set", handleSet)
+	s := NewServer()
+	mux.HandleFunc("/upload", s.handleGet)
+	mux.HandleFunc("/fetch", s.handleSet)
 
 	// Configure TLS for HTTP/2
 	tlsCfg := &tls.Config{
@@ -110,8 +150,6 @@ func (s *server) Upload(filename string, filecontent []byte) {
 	if err != nil {
 		panic(err)
 	}
-
-	err = os.WriteFile(_dirName+filename, filecontent, os.ModePerm)
 
 }
 
