@@ -8,24 +8,18 @@ package main
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"sync"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
 type FS struct {
@@ -142,64 +136,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return df, 0
 	}
 
-	fmt.Println("reading")
-	reader := tar.NewReader(d.rc)
-	for {
-		fmt.Println("here")
-		header, err := reader.Next()
-		if err == io.EOF {
-			fmt.Println("END OF FILE")
-			break
-		}
-		if err != nil {
-			log.Printf("err %v", err)
-			break
-		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, header.Size))
-		io.Copy(buf, reader)
-		filepathStr := filepath.Clean(header.Name)
-		_, base := filepath.Split(filepathStr)
-
-		fmt.Println("filepath", filepathStr)
-		attr := attrFromHeader(header)
-
-		if base == name {
-			if header.Typeflag == tar.TypeDir {
-				// Handle directory
-				dir := &Directory{
-					rc:     d.rc,
-					KeyDir: d.KeyDir,
-					attr:   attr,
-				}
-				return &dir.Inode, 0
-			} else {
-				// Handle files
-				h := sha1.New()
-				content := buf.Bytes()
-				h.Write(content)
-				hash := h.Sum(nil)
-				encoded := hex.EncodeToString(hash)
-				d.KeyDir[base] = encoded
-
-				file := &file{
-					Attr: attr,
-					Data: []byte(content),
-					rc:   d.rc,
-				}
-
-				df := d.NewPersistentInode(
-					ctx, file,
-					fs.StableAttr{Ino: 0})
-
-				success := d.AddChild(encoded, df, true)
-				fmt.Println("added succesfully", encoded, success)
-
-				return df, 0
-			}
-		}
-	}
-
 	return nil, syscall.ENOENT
 }
 
@@ -270,28 +206,29 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
+	tarread.Export()
 
-	flag.Parse()
-	if len(flag.Args()) < 1 {
-		log.Fatal("Usage:\n  hello MOUNTPOINT")
-	}
-	opts := &fs.Options{}
-	cmd := exec.Command("umount", flag.Arg(0))
-	err := cmd.Run()
-	if err != nil {
-		log.Default().Printf("Command execution failed: %v", err)
-	}
-	//init root
-	f, err := os.Open("archive.tar")
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	opts.Debug = true
-	root := &FS{rc: f}
-	server, err := fs.Mount(flag.Arg(0), root, opts)
-	if err != nil {
-		log.Fatalf("Mount fail: %v\n", err)
-	}
-	server.Wait()
+	// flag.Parse()
+	// if len(flag.Args()) < 1 {
+	// 	log.Fatal("Usage:\n  hello MOUNTPOINT")
+	// }
+	// opts := &fs.Options{}
+	// cmd := exec.Command("umount", flag.Arg(0))
+	// err := cmd.Run()
+	// if err != nil {
+	// 	log.Default().Printf("Command execution failed: %v", err)
+	// }
+	// //init root
+	// f, err := os.Open("archive.tar")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer f.Close()
+	// opts.Debug = true
+	// root := &FS{rc: f}
+	// server, err := fs.Mount(flag.Arg(0), root, opts)
+	// if err != nil {
+	// 	log.Fatalf("Mount fail: %v\n", err)
+	// }
+	// server.Wait()
 }

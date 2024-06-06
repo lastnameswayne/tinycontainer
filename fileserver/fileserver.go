@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha1"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -62,13 +62,16 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	s.mutex.Lock()
 	hash, ok := s.keydir[key]
 	s.mutex.Unlock()
+	for ket := range s.keydir {
+		fmt.Println(ket)
+	}
 
 	if !ok {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	file, err := os.OpenFile(_dirName+hash, os.O_RDWR, 0644)
+	file, err := os.OpenFile(_dirName+"/"+hash, os.O_RDWR, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -81,25 +84,18 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
 	Key   string `json:"key"`
-	Value string `json:"value"` // Base64 encoded string of the binary data
+	Value []byte `json:"value"` // Base64 encoded string of the binary data
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("received set")
 	var kv KeyValue
 	err := json.NewDecoder(r.Body).Decode(&kv)
 	if err != nil {
 		http.Error(w, "Error decoding JSON", http.StatusBadRequest)
 		return
 	}
-
-	// Base64 decode the value
-	fileContent, err := base64.StdEncoding.DecodeString(kv.Value)
-	if err != nil {
-		http.Error(w, "Error decoding base64 value", http.StatusBadRequest)
-		return
-	}
-
-	err = os.WriteFile(_dirName+kv.Key, fileContent, os.ModePerm)
+	fileContent := kv.Value
 
 	//hash of decodedValue
 	h := sha1.New()
@@ -108,10 +104,19 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 	encoded := hex.EncodeToString(hash)
 
 	s.mutex.Lock()
-	s.keydir[_dirName+kv.Key] = encoded
+	s.keydir[kv.Key] = encoded
 	s.mutex.Unlock()
 
-	err = os.WriteFile(_dirName+encoded, fileContent, 0666)
+	parts := strings.Split(encoded, "/")
+	dirNames := parts[:len(parts)-1]
+	if len(parts) != 1 {
+		err := os.MkdirAll(strings.Join(dirNames, "/"), 0666)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	err = os.WriteFile(_dirName+"/"+encoded, fileContent, os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
@@ -122,8 +127,8 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 func main() {
 	mux := http.NewServeMux()
 	s := NewServer()
-	mux.HandleFunc("/upload", s.handleGet)
-	mux.HandleFunc("/fetch", s.handleSet)
+	mux.HandleFunc("/upload", s.handleSet)
+	mux.HandleFunc("/fetch", s.handleGet)
 
 	// Configure TLS for HTTP/2
 	tlsCfg := &tls.Config{
