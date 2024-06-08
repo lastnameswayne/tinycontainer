@@ -8,12 +8,17 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"sync"
 	"syscall"
 
@@ -61,16 +66,6 @@ func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
 	rf := Directory{rc: r.rc, KeyDir: map[string]string{}}
 	p.AddChild("data", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-
-	ch := r.NewPersistentInode(
-		ctx, &fs.MemRegularFile{
-			Data: []byte("file.txt"),
-			Attr: fuse.Attr{
-				Mode: 0644,
-			},
-		}, fs.StableAttr{Ino: 2})
-	rf.AddChild("file.txt", ch, false)
-
 }
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
@@ -84,59 +79,78 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 	hash, ok := d.KeyDir[name]
 	if ok {
-		if _, err := os.Stat("tarmnt/data/" + hash); errors.Is(err, os.ErrNotExist) {
-			//file does not exist on the SSD
-			fmt.Println("need to call NFS", hash)
-			//need to call NFS which has it
-			//we need a NFS with access to the tar file
-			//when we get the file from NFS we store it here in this FS
-			//this function should never read from the tar file directly
-			//the NFS should have all the entire docker image
-			//and then return the content here in bytes and we save it
-			requestUrl := fmt.Sprintf("http://localhost:8443/get?filepath=%s", name)
-			res, err := http.Get(requestUrl)
+		_, err := os.Stat("tarmnt/data/" + hash)
+		fileExists := !errors.Is(err, os.ErrNotExist)
+
+		if fileExists {
+			//read file at hash
+			fmt.Println("reading file tarmnt/data/", hash)
+			reader, err := os.Open("tarmnt/data/" + hash)
 			if err != nil {
-				fmt.Printf("error making http request: %s\n", err)
-				os.Exit(1)
-			}
-			filecontent, err := io.ReadAll(res.Body)
-			if err != nil {
-				fmt.Printf("error reading body: %s\n", err)
-				os.Exit(1)
+				return nil, syscall.ENOENT
 			}
 
+			fmt.Println("reader")
 			file := &file{
-				Data: filecontent,
-				rc:   d.rc,
+				rc: reader,
 			}
 
+			fmt.Println("new node")
 			df := d.NewPersistentInode(
 				ctx, file,
 				fs.StableAttr{Ino: 0})
-			return df, syscall.ENOENT
+
+			return df, 0
+
 		}
-
-		//read file at hash
-		fmt.Println("reading file tarmnt/data/", hash)
-		reader, err := os.Open("tarmnt/data/" + hash)
-		if err != nil {
-			return nil, syscall.ENOENT
-		}
-
-		fmt.Println("reader")
-		file := &file{
-			rc: reader,
-		}
-
-		fmt.Println("new node")
-		df := d.NewPersistentInode(
-			ctx, file,
-			fs.StableAttr{Ino: 0})
-
-		return df, 0
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+	//file does not exist on the SSD
+	fmt.Println("need to call NFS")
+	//need to call NFS which has it
+	//we need a NFS with access to the tar file
+	//when we get the file from NFS we store it here in this FS
+	//this function should never read from the tar file directly
+	//the NFS should have all the entire docker image
+	//and then return the content here in bytes and we save it
+	requestUrl := fmt.Sprintf("http://localhost:8443/fetch?filepath=%s", name)
+	buffer := bytes.NewBuffer([]byte{})
+	req, err := http.NewRequest("GET", requestUrl, buffer)
+	if err != nil {
+		log.Fatalf("Error creating HTTP request: %v", err)
 	}
 
-	return nil, syscall.ENOENT
+	// Send the HTTP request
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Error sending HTTP request: %v", err)
+	}
+
+	filecontent, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("error reading body: %s\n", err)
+		os.Exit(1)
+	}
+
+	file := &file{
+		Data: filecontent,
+		rc:   d.rc,
+	}
+	// Close the response body
+	defer resp.Body.Close()
+
+	df := d.NewPersistentInode(
+		ctx, file,
+		fs.StableAttr{Ino: 0})
+	return df, syscall.ENOENT
+
+	// return nil, syscall.ENOENT
 }
 
 func (f *Directory) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
@@ -208,27 +222,22 @@ var _ = (fs.NodeOpener)((*file)(nil))
 func main() {
 	tarread.Export()
 
-	// flag.Parse()
-	// if len(flag.Args()) < 1 {
-	// 	log.Fatal("Usage:\n  hello MOUNTPOINT")
-	// }
-	// opts := &fs.Options{}
-	// cmd := exec.Command("umount", flag.Arg(0))
-	// err := cmd.Run()
-	// if err != nil {
-	// 	log.Default().Printf("Command execution failed: %v", err)
-	// }
-	// //init root
-	// f, err := os.Open("archive.tar")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer f.Close()
-	// opts.Debug = true
-	// root := &FS{rc: f}
-	// server, err := fs.Mount(flag.Arg(0), root, opts)
-	// if err != nil {
-	// 	log.Fatalf("Mount fail: %v\n", err)
-	// }
-	// server.Wait()
+	flag.Parse()
+	if len(flag.Args()) < 1 {
+		log.Fatal("Usage:\n  hello MOUNTPOINT")
+	}
+	opts := &fs.Options{}
+	cmd := exec.Command("umount", flag.Arg(0))
+	err := cmd.Run()
+	if err != nil {
+		log.Default().Printf("Command execution failed: %v", err)
+	}
+	//init root
+	opts.Debug = true
+	root := &FS{}
+	server, err := fs.Mount(flag.Arg(0), root, opts)
+	if err != nil {
+		log.Fatalf("Mount fail: %v\n", err)
+	}
+	server.Wait()
 }

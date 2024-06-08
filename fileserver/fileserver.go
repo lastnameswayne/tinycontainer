@@ -53,6 +53,7 @@ func NewServer() server {
 const _dirName = "fileserverfiles"
 
 func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("received get")
 	key := r.URL.Query().Get("filepath")
 	if key == "" {
 		http.Error(w, "filepath is required", http.StatusBadRequest)
