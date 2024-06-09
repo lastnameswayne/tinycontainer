@@ -22,7 +22,7 @@ type KeyValue struct {
 func Export() {
 	result := make([]KeyValue, 0)
 
-	f, err := os.Open("archive.tar")
+	f, err := os.Open("test.tar")
 	if err != nil {
 		panic(err)
 	}
