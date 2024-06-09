@@ -63,9 +63,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	s.mutex.Lock()
 	hash, ok := s.keydir[key]
 	s.mutex.Unlock()
-	for ket := range s.keydir {
-		fmt.Println(ket)
-	}
+	fmt.Println("key", key, "hash", hash, "ok", ok)
 
 	if !ok {
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -79,7 +77,10 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	filecontent, err := io.ReadAll(file)
 
-	fmt.Fprintln(w, hash, filecontent)
+	fmt.Println("read filecontent", filecontent)
+
+	message := fmt.Sprintf("%s|||%s", hash, filecontent)
+	fmt.Fprintln(w, message)
 }
 
 // KeyValue represents the JSON structure for set requests

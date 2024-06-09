@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -38,6 +39,7 @@ type Directory struct {
 	KeyDir map[string]string
 	File   *file
 	attr   fuse.Attr
+	name   string
 }
 
 // Open
@@ -64,7 +66,7 @@ func attrFromHeader(h *tar.Header) fuse.Attr {
 
 func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
-	rf := Directory{rc: r.rc, KeyDir: map[string]string{}}
+	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, name: "data"}
 	p.AddChild("data", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 }
 
@@ -79,13 +81,14 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 	hash, ok := d.KeyDir[name]
 	if ok {
-		_, err := os.Stat("tarmnt/data/" + hash)
+		fmt.Println("found hash", hash)
+		_, err := os.Stat("./data/" + hash)
 		fileExists := !errors.Is(err, os.ErrNotExist)
 
 		if fileExists {
 			//read file at hash
-			fmt.Println("reading file tarmnt/data/", hash)
-			reader, err := os.Open("tarmnt/data/" + hash)
+			fmt.Println("reading file ./data/", hash)
+			reader, err := os.Open("./data/" + hash)
 			if err != nil {
 				return nil, syscall.ENOENT
 			}
@@ -96,7 +99,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			}
 
 			fmt.Println("new node")
-			df := d.NewPersistentInode(
+			df := d.NewInode(
 				ctx, file,
 				fs.StableAttr{Ino: 0})
 
@@ -112,14 +115,14 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		},
 	}
 	//file does not exist on the SSD
-	fmt.Println("need to call NFS")
+	fmt.Println("need to call NFS", name)
 	//need to call NFS which has it
 	//we need a NFS with access to the tar file
 	//when we get the file from NFS we store it here in this FS
 	//this function should never read from the tar file directly
 	//the NFS should have all the entire docker image
 	//and then return the content here in bytes and we save it
-	requestUrl := fmt.Sprintf("http://localhost:8443/fetch?filepath=%s", name)
+	requestUrl := fmt.Sprintf("https://localhost:8443/fetch?filepath=%s", d.name+"/"+name)
 	buffer := bytes.NewBuffer([]byte{})
 	req, err := http.NewRequest("GET", requestUrl, buffer)
 	if err != nil {
@@ -138,19 +141,32 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		os.Exit(1)
 	}
 
+	// Assume `received` is the string received from the client
+	parts := strings.SplitN(string(filecontent), "|||", 2)
+	if len(parts) < 2 {
+		return nil, 1
+	}
+	hash = parts[0]
+	filecontentstring := parts[1]
+
+	fmt.Println("received", string(filecontent))
+
 	file := &file{
-		Data: filecontent,
+		Data: []byte(filecontentstring),
 		rc:   d.rc,
 	}
+	file.Attr.Mode = 0777
+	file.Attr.Size = uint64(len(filecontent))
 	// Close the response body
 	defer resp.Body.Close()
 
 	df := d.NewPersistentInode(
 		ctx, file,
 		fs.StableAttr{Ino: 0})
-	return df, syscall.ENOENT
 
-	// return nil, syscall.ENOENT
+	d.AddChild(hash, df, false)
+	d.KeyDir[d.name+"/"+name] = hash
+	return df, 0
 }
 
 func (f *Directory) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
