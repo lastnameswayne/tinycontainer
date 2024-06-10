@@ -149,16 +149,3 @@ func main() {
 }
 
 // goal: load a docker tar ball into a cache
-
-// given a file, hash it and store it in a map, write to SSD in a content-addressed way
-// can use the bitcask for this
-func (s *server) Upload(filename string, filecontent []byte) {
-	err := os.MkdirAll(_dirName, os.ModePerm)
-	if err != nil {
-		panic(err)
-	}
-
-}
-
-// looks up in the index to get the hash (which is the location) and returns the file if there
-func (s *server) Fetch(filehash string) {}

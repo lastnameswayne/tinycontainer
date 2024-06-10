@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"time"
 
+	"github.com/lastnameswayne/tinycontainer/tarread"
 	"github.com/urfave/cli/v2"
 )
 
@@ -13,7 +16,6 @@ func main() {
 		Name:  "sway",
 		Usage: "run a container in the cloud",
 		Action: func(*cli.Context) error {
-
 			fmt.Println("hello world")
 			return nil
 		},
@@ -23,7 +25,27 @@ func main() {
 		{
 			Name: "run",
 			Action: func(ctx *cli.Context) error {
-				fmt.Println("run")
+				start := time.Now()
+				fmt.Println("building docker image and generating tar ball...")
+				cmd := exec.Command("docker build --tag hello-py .")
+				if err := cmd.Run(); err != nil {
+					log.Fatal(err)
+				}
+				cmd = exec.Command("docker image save hello-py >test.tar")
+				if err := cmd.Run(); err != nil {
+					log.Fatal(err)
+				}
+				fmt.Println("sending to fileserver")
+				tarread.Export("test.tar", "135.181.157.206")
+
+				fmt.Println("starting worker...")
+
+				//could ssh into worker
+				//we need to run
+				// sudo runc run <container-id>
+
+				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
+				fmt.Printf("took %d ms", timeElapsed)
 				return nil
 			},
 		},

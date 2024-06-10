@@ -19,10 +19,10 @@ type KeyValue struct {
 	Value []byte `json:"value"` // Base64 encoded string of the binary data
 }
 
-func Export() {
+func Export(tarfile string, url string) {
 	result := make([]KeyValue, 0)
 
-	f, err := os.Open("test.tar")
+	f, err := os.Open(tarfile)
 	if err != nil {
 		panic(err)
 	}
@@ -81,7 +81,7 @@ func Export() {
 
 		// Create a new HTTP request
 		fmt.Println("sending req", jsonData)
-		req, err := http.NewRequest("POST", "https://localhost:8443/upload", bytes.NewBuffer(jsonData))
+		req, err := http.NewRequest("POST", url+"/upload", bytes.NewBuffer(jsonData))
 		if err != nil {
 			log.Fatalf("Error creating HTTP request: %v", err)
 		}

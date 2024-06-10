@@ -1,15 +1,17 @@
-# syntax=docker/dockerfile:1
+# Use an official Python runtime as a parent image
+FROM python:3.10-slim
 
-# base python image for custom image
-FROM python:3.9.13-slim-buster
+# Set the working directory to /app
+WORKDIR /app
 
-# create working directory and install pip dependencies
-WORKDIR /hello-py
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
+# Copy the current directory contents into the container at /app
+COPY . /app
 
-# copy python project files from local to /hello-py image working directory
-COPY . .
+# Make port 80 available to the world outside this container
+EXPOSE 80
 
-# run the flask server  
-CMD [ "python3", "-m" , "flask", "run", "--host=0.0.0.0"]
+# Define environment variable
+ENV NAME World
+
+# Run app.py when the container launches
+CMD ["python", "app.py"]

@@ -25,7 +25,6 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
 type FS struct {
@@ -236,8 +235,6 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
-	tarread.Export()
-
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
