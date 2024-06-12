@@ -63,12 +63,6 @@ func attrFromHeader(h *tar.Header) fuse.Attr {
 	return out
 }
 
-func (r *FS) OnAdd(ctx context.Context) {
-	p := r.EmbeddedInode()
-	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, name: "data"}
-	p.AddChild("data", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-}
-
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 //the worker executes the containers
@@ -227,7 +221,6 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	return f, uint32(0), 0
 }
 
-var _ = (fs.NodeOnAdder)((*FS)(nil))
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 var _ = (fs.NodeReader)((*Directory)(nil))
 
