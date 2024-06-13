@@ -60,6 +60,10 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for val := range s.keydir {
+		fmt.Println(val)
+	}
+
 	s.mutex.Lock()
 	hash, ok := s.keydir[key]
 	s.mutex.Unlock()
@@ -77,8 +81,6 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	filecontent, err := io.ReadAll(file)
 
-	fmt.Println("read filecontent", filecontent)
-
 	message := fmt.Sprintf("%s|||%s", hash, filecontent)
 	fmt.Fprintln(w, message)
 }
@@ -90,10 +92,10 @@ type KeyValue struct {
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("received set")
 	var kv KeyValue
 	err := json.NewDecoder(r.Body).Decode(&kv)
 	if err != nil {
+		fmt.Println(err, kv)
 		http.Error(w, "Error decoding JSON", http.StatusBadRequest)
 		return
 	}
@@ -107,6 +109,7 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	s.mutex.Lock()
 	s.keydir[kv.Key] = encoded
+	fmt.Println(kv.Key)
 	s.mutex.Unlock()
 
 	parts := strings.Split(encoded, "/")

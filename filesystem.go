@@ -25,6 +25,7 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
 type FS struct {
@@ -39,6 +40,12 @@ type Directory struct {
 	File   *file
 	attr   fuse.Attr
 	name   string
+}
+
+func (r *FS) OnAdd(ctx context.Context) {
+	p := r.EmbeddedInode()
+	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, name: "app"}
+	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 }
 
 // Open
@@ -221,6 +228,8 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	return f, uint32(0), 0
 }
 
+var _ = (fs.NodeOnAdder)((*FS)(nil))
+
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 var _ = (fs.NodeReader)((*Directory)(nil))
 
@@ -228,20 +237,21 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
+	tarread.Export("archive.tar", "https://localhost:8443/")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
 	}
 	opts := &fs.Options{}
-	cmd := exec.Command("umount", flag.Arg(0))
+	cmd := exec.Command("umount", flag.Arg(0)+"/data")
 	err := cmd.Run()
 	if err != nil {
-		log.Default().Printf("Command execution failed: %v", err)
+		log.Default().Printf("Command umount execution failed: %v", err)
 	}
 	//init root
 	opts.Debug = true
 	root := &FS{}
-	server, err := fs.Mount(flag.Arg(0), root, opts)
+	server, err := fs.Mount(flag.Arg(0)+"/data", root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
 	}
