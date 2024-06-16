@@ -53,15 +53,16 @@ func NewServer() server {
 const _dirName = "fileserverfiles"
 
 func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("received get")
 	key := r.URL.Query().Get("filepath")
+
+	fmt.Println("received get for file", key)
 	if key == "" {
 		http.Error(w, "filepath is required", http.StatusBadRequest)
 		return
 	}
 
 	for val := range s.keydir {
-		fmt.Println(val)
+		fmt.Println("key", val)
 	}
 
 	s.mutex.Lock()
@@ -139,11 +140,13 @@ func main() {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		// For real applications ensure your settings are secure
+
 	}
 	server := &http.Server{
-		Addr:      ":8443",
-		Handler:   mux,
-		TLSConfig: tlsCfg,
+		Addr:         ":8443",
+		Handler:      mux,
+		TLSConfig:    tlsCfg,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
 	// Generate your own certificate and key or use Let's Encrypt in real-world applications

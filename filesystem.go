@@ -54,6 +54,7 @@ func (r *FS) OnAdd(ctx context.Context) {
 // Readir
 // Readdirplus
 // Stat
+var root = "app"
 
 // attrFromHeader fills a fuse.Attr struct from a tar.Header.
 func attrFromHeader(h *tar.Header) fuse.Attr {
@@ -82,13 +83,13 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	hash, ok := d.KeyDir[name]
 	if ok {
 		fmt.Println("found hash", hash)
-		_, err := os.Stat("./data/" + hash)
+		_, err := os.Stat("./" + root + "/" + hash)
 		fileExists := !errors.Is(err, os.ErrNotExist)
 
 		if fileExists {
 			//read file at hash
-			fmt.Println("reading file ./data/", hash)
-			reader, err := os.Open("./data/" + hash)
+			fmt.Println("reading file ./app/", hash)
+			reader, err := os.Open("./" + root + "/" + hash)
 			if err != nil {
 				return nil, syscall.ENOENT
 			}
@@ -237,13 +238,13 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
-	tarread.Export("archive.tar", "https://localhost:8443/")
+	tarread.Export("archive.tar", "https://localhost:8443")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
 	}
 	opts := &fs.Options{}
-	cmd := exec.Command("umount", flag.Arg(0)+"/data")
+	cmd := exec.Command("umount", flag.Arg(0))
 	err := cmd.Run()
 	if err != nil {
 		log.Default().Printf("Command umount execution failed: %v", err)
@@ -251,7 +252,7 @@ func main() {
 	//init root
 	opts.Debug = true
 	root := &FS{}
-	server, err := fs.Mount(flag.Arg(0)+"/data", root, opts)
+	server, err := fs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
 	}
