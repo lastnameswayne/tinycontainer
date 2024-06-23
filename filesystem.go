@@ -39,12 +39,15 @@ type Directory struct {
 	KeyDir map[string]string
 	File   *file
 	attr   fuse.Attr
-	name   string
+	//extra
+	path   string
+	fs     *NFS
+	parent *Directory
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
-	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, name: "app"}
+	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, path: "app"}
 	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 }
 
