@@ -8,20 +8,17 @@ package main
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
-	"crypto/tls"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -30,26 +27,95 @@ import (
 
 type FS struct {
 	fs.Inode
-	rc io.Reader
+
+	root   *Directory
+	nodeId uint64
+	path   string
+	size   int64
+}
+
+var _ = (fs.NodeStatfser)((*FS)(nil))
+
+func NewFS(path string) *FS {
+	fs := &FS{
+		path: path,
+	}
+
+	fs.root = fs.newDir(path, os.ModeDir)
+	return fs
+}
+
+func (fs *FS) newDir(path string, mode os.FileMode) *Directory {
+	n := time.Now()
+	now := uint64(n.UnixMilli())
+	return &Directory{
+		attr: fuse.Attr{
+			Ino:     0,
+			Atime:   now,
+			Mtime:   now,
+			Ctime:   now,
+			Crtime_: now,
+			Mode:    uint32(os.ModeDir),
+		},
+		path: path,
+		fs:   fs,
+	}
+}
+
+func (fs *FS) newFile(name string) *file {
+	n := time.Now()
+	now := uint64(n.UnixMilli())
+	return &file{
+		attr: fuse.Attr{
+			Ino:     0,
+			Atime:   now,
+			Mtime:   now,
+			Ctime:   now,
+			Crtime_: now,
+			Mode:    uint32(os.ModeDir),
+		},
+		path: path,
+		fs:   fs,
+	}
+}
+
+func (f *FS) Root() (*Directory, error) {
+	return f.root, nil
+}
+
+func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	s := syscall.Statfs_t{}
+	err := syscall.Statfs(f.path, &s)
+	if err != nil {
+		return 1
+	}
+
+	out.Blocks = s.Blocks
+	out.Bfree = s.Bfree
+	out.Bavail = s.Bavail
+	out.Ffree = s.Ffree
+	out.Bsize = s.Bsize
+	return 0
 }
 
 type Directory struct {
 	fs.Inode
+	lock   sync.RWMutex
 	rc     io.Reader
 	KeyDir map[string]string
 	File   *file
 	attr   fuse.Attr
 	//extra
 	path   string
-	fs     *NFS
+	fs     *FS
 	parent *Directory
 }
 
-func (r *FS) OnAdd(ctx context.Context) {
-	p := r.EmbeddedInode()
-	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, path: "app"}
-	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-}
+// func (r *FS) OnAdd(ctx context.Context) {
+// 	p := r.EmbeddedInode()
+// 	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, path: "app"}
+// 	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+// }
 
 // Open
 // Read
@@ -79,107 +145,123 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 //the worker executes the containers
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	fmt.Println("called lookup on directory for", d.attr.String(), name)
-	for k, _ := range d.KeyDir {
-		fmt.Println("key", k)
-	}
-	hash, ok := d.KeyDir[name]
-	if ok {
-		fmt.Println("found hash", hash)
-		_, err := os.Stat("./" + root + "/" + hash)
-		fileExists := !errors.Is(err, os.ErrNotExist)
+	d.lock.RLock()
+	defer d.lock.RUnlock()
 
-		if fileExists {
-			//read file at hash
-			fmt.Println("reading file ./app/", hash)
-			reader, err := os.Open("./" + root + "/" + hash)
-			if err != nil {
-				return nil, syscall.ENOENT
-			}
-
-			fmt.Println("reader")
-			file := &file{
-				rc: reader,
-			}
-
-			fmt.Println("new node")
-			df := d.NewInode(
-				ctx, file,
-				fs.StableAttr{Ino: 0})
-
-			return df, 0
-
-		}
-	}
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-	//file does not exist on the SSD
-	fmt.Println("need to call NFS", name)
-	//need to call NFS which has it
-	//we need a NFS with access to the tar file
-	//when we get the file from NFS we store it here in this FS
-	//this function should never read from the tar file directly
-	//the NFS should have all the entire docker image
-	//and then return the content here in bytes and we save it
-	requestUrl := fmt.Sprintf("https://localhost:8443/fetch?filepath=%s", d.name+"/"+name)
-	buffer := bytes.NewBuffer([]byte{})
-	req, err := http.NewRequest("GET", requestUrl, buffer)
+	path := filepath.Join(d.path, name)
+	stats, err := os.Stat(path)
 	if err != nil {
-		log.Fatalf("Error creating HTTP request: %v", err)
+		return nil, syscall.ENOENT
 	}
 
-	// Send the HTTP request
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Error sending HTTP request: %v", err)
+	switch {
+	case stats.IsDir():
+		return &d.fs.newDir(path, stats.Mode()).Inode, 0
+
+	case stats.Mode().IsRegular():
+		return d.fs.newFile(path, stats.Mode()).Inode, 0
+
+	default:
+		panic("unknown type in fs")
 	}
 
-	filecontent, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("error reading body: %s\n", err)
-		os.Exit(1)
-	}
+	// fmt.Println("called lookup on directory for", d.attr.String(), name)
+	// for k, _ := range d.KeyDir {
+	// 	fmt.Println("key", k)
+	// }
+	// hash, ok := d.KeyDir[name]
+	// if ok {
+	// 	fmt.Println("found hash", hash)
+	// 	_, err := os.Stat("./" + root + "/" + hash)
+	// 	fileExists := !errors.Is(err, os.ErrNotExist)
 
-	// Assume `received` is the string received from the client
-	parts := strings.SplitN(string(filecontent), "|||", 2)
-	if len(parts) < 2 {
-		return nil, 1
-	}
-	hash = parts[0]
-	filecontentstring := parts[1]
+	// 	if fileExists {
+	// 		//read file at hash
+	// 		fmt.Println("reading file ./app/", hash)
+	// 		reader, err := os.Open("./" + root + "/" + hash)
+	// 		if err != nil {
+	// 			return nil, syscall.ENOENT
+	// 		}
 
-	fmt.Println("received", string(filecontent))
+	// 		fmt.Println("reader")
+	// 		file := &file{
+	// 			rc: reader,
+	// 		}
 
-	file := &file{
-		Data: []byte(filecontentstring),
-		rc:   d.rc,
-	}
-	file.Attr.Mode = 0777
-	file.Attr.Size = uint64(len(filecontent))
-	// Close the response body
-	defer resp.Body.Close()
+	// 		fmt.Println("new node")
+	// 		df := d.NewInode(
+	// 			ctx, file,
+	// 			fs.StableAttr{Ino: 0})
 
-	df := d.NewPersistentInode(
-		ctx, file,
-		fs.StableAttr{Ino: 0})
+	// 		return df, 0
 
-	d.AddChild(hash, df, false)
-	d.KeyDir[d.name+"/"+name] = hash
-	return df, 0
-}
+	// 	}
+	// }
+	// client := &http.Client{
+	// 	Transport: &http.Transport{
+	// 		TLSClientConfig: &tls.Config{
+	// 			InsecureSkipVerify: true,
+	// 		},
+	// 	},
+	// }
+	// //file does not exist on the SSD
+	// fmt.Println("need to call NFS", name)
+	// //need to call NFS which has it
+	// //we need a NFS with access to the tar file
+	// //when we get the file from NFS we store it here in this FS
+	// //this function should never read from the tar file directly
+	// //the NFS should have all the entire docker image
+	// //and then return the content here in bytes and we save it
+	// requestUrl := fmt.Sprintf("https://localhost:8443/fetch?filepath=%s", d.name+"/"+name)
+	// buffer := bytes.NewBuffer([]byte{})
+	// req, err := http.NewRequest("GET", requestUrl, buffer)
+	// if err != nil {
+	// 	log.Fatalf("Error creating HTTP request: %v", err)
+	// }
 
-func (f *Directory) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	fmt.Println("CALLING READ on directory")
+	// // Send the HTTP request
+	// resp, err := client.Do(req)
+	// if err != nil {
+	// 	log.Fatalf("Error sending HTTP request: %v", err)
+	// }
 
-	return nil, 0
+	// filecontent, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	fmt.Printf("error reading body: %s\n", err)
+	// 	os.Exit(1)
+	// }
+
+	// // Assume `received` is the string received from the client
+	// parts := strings.SplitN(string(filecontent), "|||", 2)
+	// if len(parts) < 2 {
+	// 	return nil, 1
+	// }
+	// hash = parts[0]
+	// filecontentstring := parts[1]
+
+	// fmt.Println("received", string(filecontent))
+
+	// file := &file{
+	// 	Data: []byte(filecontentstring),
+	// 	rc:   d.rc,
+	// }
+	// file.Attr.Mode = 0777
+	// file.Attr.Size = uint64(len(filecontent))
+	// // Close the response body
+	// defer resp.Body.Close()
+
+	// df := d.NewPersistentInode(
+	// 	ctx, file,
+	// 	fs.StableAttr{Ino: 0})
+
+	// d.AddChild(hash, df, false)
+	// d.KeyDir[d.name+"/"+name] = hash
+	// return df, 0
 }
 
 func (d *Directory) Getattr() fuse.Attr {
+	d.lock.RLock()
+	defer d.lock.RUnlock()
 	if d.File == nil {
 		// root directory
 		return fuse.Attr{Mode: 0755}
@@ -201,14 +283,16 @@ type file struct {
 	fs.Inode
 	rc   io.Reader
 	Data []byte
-	Attr fuse.Attr
+	attr fuse.Attr
 	mu   sync.Mutex
+	path string
+	fs   *FS
 }
 
 func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = 0777
 	out.Nlink = 1
-	out.Size = f.Attr.Size
+	out.Size = f.attr.Size
 	const bs = 512
 	out.Blksize = bs
 	out.Blocks = (out.Size + bs - 1) / bs
@@ -232,10 +316,7 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	return f, uint32(0), 0
 }
 
-var _ = (fs.NodeOnAdder)((*FS)(nil))
-
 var _ = (fs.NodeLookuper)((*Directory)(nil))
-var _ = (fs.NodeReader)((*Directory)(nil))
 
 var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
@@ -254,7 +335,7 @@ func main() {
 	}
 	//init root
 	opts.Debug = true
-	root := &FS{}
+	root := NewFS(flag.Arg(0))
 	server, err := fs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
