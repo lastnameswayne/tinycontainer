@@ -7,7 +7,6 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -61,9 +60,9 @@ func NewFS(path string) *FS {
 func (fs *FS) newDir(path string, mode os.FileMode) *Directory {
 	n := time.Now()
 	now := uint64(n.UnixMilli())
+	fmt.Println("NEW DIR", path)
 	return &Directory{
 		attr: fuse.Attr{
-			Ino:     0,
 			Atime:   now,
 			Mtime:   now,
 			Ctime:   now,
@@ -81,7 +80,6 @@ func (fs *FS) newFile(path string, mode os.FileMode) *file {
 
 	return &file{
 		attr: fuse.Attr{
-			Ino:     0,
 			Atime:   now,
 			Mtime:   now,
 			Ctime:   now,
@@ -98,23 +96,17 @@ func (f *FS) Root() (*Directory, error) {
 }
 
 func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
-	s := syscall.Statfs_t{}
-	err := syscall.Statfs(f.path, &s)
-	if err != nil {
-		return 1
+	*out = fuse.StatfsOut{
+		Bsize:  512,
+		Blocks: 10,
+		Bavail: 1000,
+		Bfree:  1000,
 	}
-
-	out.Blocks = s.Blocks
-	out.Bfree = s.Bfree
-	out.Bavail = s.Bavail
-	out.Ffree = s.Ffree
-	out.Bsize = s.Bsize
 	return 0
 }
 
 type Directory struct {
 	fs.Inode
-	lock   sync.RWMutex
 	rc     io.Reader
 	KeyDir map[string]string
 	File   *file
@@ -125,11 +117,11 @@ type Directory struct {
 	parent *Directory
 }
 
-// func (r *FS) OnAdd(ctx context.Context) {
-// 	p := r.EmbeddedInode()
-// 	rf := Directory{rc: r.rc, KeyDir: map[string]string{}, path: "app"}
-// 	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-// }
+func (r *FS) OnAdd(ctx context.Context) {
+	p := r.EmbeddedInode()
+	rf := Directory{rc: r.root.rc, KeyDir: map[string]string{}, path: "app"}
+	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+}
 
 // Open
 // Read
@@ -137,32 +129,19 @@ type Directory struct {
 // Readir
 // Readdirplus
 // Stat
-// attrFromHeader fills a fuse.Attr struct from a tar.Header.
-func attrFromHeader(h *tar.Header) fuse.Attr {
-	out := fuse.Attr{
-		Mode: uint32(h.Mode),
-		Size: uint64(h.Size),
-		Owner: fuse.Owner{
-			Uid: uint32(h.Uid),
-			Gid: uint32(h.Gid),
-		},
-	}
-	out.SetTimes(&h.AccessTime, &h.ModTime, &h.ChangeTime)
-
-	return out
-}
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 //the worker executes the containers
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	d.lock.RLock()
-	defer d.lock.RUnlock()
+	fmt.Println("called lookup on dir", d.path)
 
 	path := filepath.Join(d.path, name)
 	stats, err := os.Stat(path)
+	fmt.Println("path")
 	if err != nil {
+		panic(err)
 		return nil, syscall.ENOENT
 	}
 
@@ -171,7 +150,12 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return &d.fs.newDir(path, stats.Mode()).Inode, 0
 
 	case stats.Mode().IsRegular():
+		fmt.Println("looking in cache")
 		hash, ok := d.KeyDir[name]
+		for key := range d.KeyDir {
+			fmt.Println(key)
+
+		}
 		if ok {
 			_, err := os.Stat("./" + hash)
 			fileExists := !errors.Is(err, os.ErrNotExist)
@@ -238,8 +222,6 @@ func (d *Directory) getDataFromFileServer(name string) *file {
 }
 
 func (d *Directory) Getattr() fuse.Attr {
-	d.lock.RLock()
-	defer d.lock.RUnlock()
 	if d.File == nil {
 		// root directory
 		return fuse.Attr{Mode: 0755}
@@ -279,9 +261,6 @@ func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 
 func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	fmt.Println("OPENING FILE", f.Data)
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
 
 	if f.Data == nil {
 		fmt.Println("Data is nil, attempting to read")
