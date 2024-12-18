@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha1"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -110,7 +109,7 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	s.mutex.Lock()
 	s.keydir[kv.Key] = encoded
-	fmt.Println(kv.Key)
+	fmt.Println("set key", kv.Key)
 	s.mutex.Unlock()
 
 	parts := strings.Split(encoded, "/")
@@ -136,21 +135,13 @@ func main() {
 	mux.HandleFunc("/upload", s.handleSet)
 	mux.HandleFunc("/fetch", s.handleGet)
 
-	// Configure TLS for HTTP/2
-	tlsCfg := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		// For real applications ensure your settings are secure
-
-	}
 	server := &http.Server{
-		Addr:         ":8443",
-		Handler:      mux,
-		TLSConfig:    tlsCfg,
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+		Addr:    ":8443",
+		Handler: mux,
 	}
 
 	// Generate your own certificate and key or use Let's Encrypt in real-world applications
-	log.Println("Starting HTTP/2 server on https://localhost:8443")
+	log.Println("Starting server on https://localhost:8443")
 	log.Fatal(server.ListenAndServeTLS("server.crt", "server.key"))
 }
 

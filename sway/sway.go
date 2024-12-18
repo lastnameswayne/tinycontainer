@@ -11,6 +11,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var server = "https://localhost:8443"
+
 func main() {
 	app := &cli.App{
 		Name:  "sway",
@@ -27,16 +29,22 @@ func main() {
 			Action: func(ctx *cli.Context) error {
 				start := time.Now()
 				fmt.Println("building docker image and generating tar ball...")
-				cmd := exec.Command("docker build --tag hello-py .")
-				if err := cmd.Run(); err != nil {
+				buildCmd := exec.Command("docker", "build", "--tag", "hello-py", ".")
+				saveCmd := exec.Command("docker", "image", "save", "hello-py")
+				outputFile, err := os.Create("test.tar")
+				if err != nil {
 					log.Fatal(err)
 				}
-				cmd = exec.Command("docker image save hello-py >test.tar")
-				if err := cmd.Run(); err != nil {
+				defer outputFile.Close()
+				saveCmd.Stdout = outputFile
+				if err := buildCmd.Run(); err != nil {
+					log.Fatal(err)
+				}
+				if err := saveCmd.Run(); err != nil {
 					log.Fatal(err)
 				}
 				fmt.Println("sending to fileserver")
-				tarread.Export("test.tar", "135.181.157.206")
+				tarread.Export("test.tar", "https://46.101.149.241:8443")
 
 				fmt.Println("starting worker...")
 

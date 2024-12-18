@@ -37,13 +37,15 @@ type FS struct {
 	path   string
 	size   int64
 	client *http.Client
+	KeyDir map[string]string
 }
 
 var _ = (fs.NodeStatfser)((*FS)(nil))
 
 func NewFS(path string) *FS {
 	fs := &FS{
-		path: path,
+		path:   path,
+		KeyDir: map[string]string{},
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -53,38 +55,36 @@ func NewFS(path string) *FS {
 		},
 	}
 	fs.client = client
-	fs.root = fs.newDir(path, os.ModeDir)
+	fs.root = fs.newDir(path)
 	return fs
 }
 
-func (fs *FS) newDir(path string, mode os.FileMode) *Directory {
+func (fs *FS) newDir(path string) *Directory {
 	n := time.Now()
 	now := uint64(n.UnixMilli())
 	fmt.Println("NEW DIR", path)
 	return &Directory{
 		attr: fuse.Attr{
-			Atime:   now,
-			Mtime:   now,
-			Ctime:   now,
-			Crtime_: now,
-			Mode:    uint32(os.ModeDir),
+			Atime: now,
+			Mtime: now,
+			Ctime: now,
+			Mode:  uint32(os.ModeDir),
 		},
 		path: path,
 		fs:   fs,
 	}
 }
 
-func (fs *FS) newFile(path string, mode os.FileMode) *file {
+func (fs *FS) newFile(path string) *file {
 	n := time.Now()
 	now := uint64(n.UnixMilli())
 
 	return &file{
 		attr: fuse.Attr{
-			Atime:   now,
-			Mtime:   now,
-			Ctime:   now,
-			Crtime_: now,
-			Mode:    uint32(os.ModeDir),
+			Atime: now,
+			Mtime: now,
+			Ctime: now,
+			Mode:  uint32(os.ModeDir),
 		},
 		path: path,
 		fs:   fs,
@@ -96,6 +96,7 @@ func (f *FS) Root() (*Directory, error) {
 }
 
 func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	fmt.Println("CALLED STAT")
 	*out = fuse.StatfsOut{
 		Bsize:  512,
 		Blocks: 10,
@@ -119,8 +120,8 @@ type Directory struct {
 
 func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
-	rf := Directory{rc: r.root.rc, KeyDir: map[string]string{}, path: "app"}
-	p.AddChild("app", r.NewPersistentInode(ctx, &rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	rf := r.newDir("app")
+	p.AddChild("app", r.NewPersistentInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 }
 
 // Open
@@ -129,6 +130,48 @@ func (r *FS) OnAdd(ctx context.Context) {
 // Readir
 // Readdirplus
 // Stat
+// var _ = (fs.NodeReaddirer)((*FS)(nil))
+
+// CustomDirStream is a custom implementation of the DirStream interface
+type CustomDirStream struct {
+	entries []fuse.DirEntry
+	index   int
+}
+
+// HasNext indicates if there are further entries
+func (ds *CustomDirStream) HasNext() bool {
+	return ds.index < len(ds.entries)
+}
+
+// Next retrieves the next entry
+func (ds *CustomDirStream) Next() (fuse.DirEntry, syscall.Errno) {
+	if !ds.HasNext() {
+		return fuse.DirEntry{}, syscall.ENOENT
+	}
+	entry := ds.entries[ds.index]
+	ds.index++
+	return entry, 0
+}
+
+// Close releases resources related to this directory stream
+func (ds *CustomDirStream) Close() {}
+
+// Readdir lists the contents of the directory
+// func (fs *FS) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+// 	return nil, 0
+
+// entries := make([]fuse.DirEntry, len(dirEntries))
+// for i, entry := range dirEntries {
+// 	stat, _ := entry.Info()
+// 	entries[i] = fuse.DirEntry{
+// 		Name: entry.Name(),
+// 		Mode: uint32(stat.Mode()),
+// 		Ino:  stat.Sys().(*syscall.Stat_t).Ino,
+// 	}
+// }
+
+// return &CustomDirStream{entries: entries}, 0
+// }
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 
@@ -138,34 +181,29 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	fmt.Println("called lookup on dir", d.path)
 
 	path := filepath.Join(d.path, name)
-	stats, err := os.Stat(path)
-	fmt.Println("path")
-	if err != nil {
-		panic(err)
-		return nil, syscall.ENOENT
-	}
-
-	switch {
-	case stats.IsDir():
-		return &d.fs.newDir(path, stats.Mode()).Inode, 0
-
-	case stats.Mode().IsRegular():
-		fmt.Println("looking in cache")
+	fmt.Println("path is", path)
+	if filepath.Ext(path) == "" {
+		return &d.fs.newDir(path).Inode, 0
+	} else {
+		fmt.Println("looking in cache", d.KeyDir)
 		hash, ok := d.KeyDir[name]
 		for key := range d.KeyDir {
 			fmt.Println(key)
-
 		}
 		if ok {
+			fmt.Println("ok", ok, "hash", hash)
 			_, err := os.Stat("./" + hash)
 			fileExists := !errors.Is(err, os.ErrNotExist)
 			if fileExists {
 				path = "./" + hash
-				return &d.fs.newFile(path, stats.Mode()).Inode, 0
+				return &d.fs.newFile(path).Inode, 0
 			}
 		}
 
-		file := d.getDataFromFileServer(name)
+		file, err := d.getDataFromFileServer(name)
+		if err != nil {
+			return nil, 1
+		}
 		df := d.NewInode(
 			ctx, file,
 			fs.StableAttr{Ino: 0})
@@ -174,13 +212,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		d.KeyDir[d.path+"/"+name] = hash
 		return df, 0
 
-	default:
-		panic("unknown type in fs")
 	}
 }
 
-func (d *Directory) getDataFromFileServer(name string) *file {
-	requestUrl := fmt.Sprintf("https://localhost:8443/fetch?filepath=%s", d.path+"/"+name)
+func (d *Directory) getDataFromFileServer(name string) (*file, error) {
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", d.path+"/"+name)
 	buffer := bytes.NewBuffer([]byte{})
 	req, err := http.NewRequest("GET", requestUrl, buffer)
 	if err != nil {
@@ -199,7 +235,12 @@ func (d *Directory) getDataFromFileServer(name string) *file {
 
 	// Assume `received` is the string received from the client
 	parts := strings.SplitN(string(filecontent), "|||", 2)
+	if strings.Contains(string(filecontent), "Not found") {
+		return nil, fmt.Errorf("NOT FOUND ON FILESERVER")
+	}
 	if len(parts) < 2 {
+		fmt.Println("PARTS", parts)
+		fmt.Println(string(filecontent))
 		panic("wrong input from response object")
 	}
 	hash := parts[0]
@@ -217,15 +258,17 @@ func (d *Directory) getDataFromFileServer(name string) *file {
 	// Close the response body
 	defer resp.Body.Close()
 
-	return file
+	return file, nil
 
 }
 
 func (d *Directory) Getattr() fuse.Attr {
+	fmt.Println("CALLED GETATTR for", d.attr)
 	if d.File == nil {
 		// root directory
 		return fuse.Attr{Mode: 0755}
 	}
+	d.attr.Mode = 0755
 	return d.attr
 }
 
@@ -284,7 +327,7 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
-	tarread.Export("archive.tar", "https://localhost:8443")
+	tarread.Export("archive.tar", "https://46.101.149.241:8443")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
@@ -298,6 +341,7 @@ func main() {
 	//init root
 	opts.Debug = true
 	root := NewFS(flag.Arg(0))
+	root.root = root.newDir("/") // Explicitly set the root directory
 	server, err := fs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)

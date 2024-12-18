@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+
 	"path/filepath"
 )
 
@@ -29,7 +30,6 @@ func Export(tarfile string, url string) {
 
 	reader := tar.NewReader(f)
 	for {
-		fmt.Println("here")
 		header, err := reader.Next()
 		if err == io.EOF {
 			fmt.Println("END OF FILE")
@@ -62,40 +62,41 @@ func Export(tarfile string, url string) {
 	}
 
 	for _, file := range result {
-		fmt.Println(file.Key)
+		sendFile(file, url)
 
-		// Create a new HTTP client
-		client := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-		}
-
-		// Marshal the KeyValue struct into JSON
-		jsonData, err := json.Marshal(file)
-		if err != nil {
-			log.Fatalf("Error encoding JSON: %v", err)
-		}
-
-		// Create a new HTTP request
-		fmt.Println("sending req", jsonData)
-		req, err := http.NewRequest("POST", url+"/upload", bytes.NewBuffer(jsonData))
-		if err != nil {
-			log.Fatalf("Error creating HTTP request: %v", err)
-		}
-
-		// Set the content type to application/json
-		req.Header.Set("Content-Type", "application/json")
-
-		// Send the HTTP request
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Fatalf("Error sending HTTP request: %v", err)
-		}
-
-		// Close the response body
-		defer resp.Body.Close()
 	}
+}
+
+func sendFile(file KeyValue, url string) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	// Marshal the KeyValue struct into JSON
+	jsonData, err := json.Marshal(file)
+	if err != nil {
+		log.Fatalf("Error encoding JSON: %v", err)
+	}
+
+	// Create a new HTTP request
+	req, err := http.NewRequest("POST", url+"/upload", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Fatalf("Error creating HTTP request: %v", err)
+	}
+
+	// Set the content type to application/json
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send the HTTP request
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Error sending HTTP request: %v", err)
+	}
+
+	// Close the response body
+	defer resp.Body.Close()
 }
