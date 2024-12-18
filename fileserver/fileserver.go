@@ -60,8 +60,8 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for val := range s.keydir {
-		fmt.Println("key", val)
+	for key, val := range s.keydir {
+		fmt.Println("key", key, "val", val)
 	}
 
 	s.mutex.Lock()
