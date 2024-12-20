@@ -127,6 +127,11 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintln(w, "Set successful")
+	marshaledIndex, err := json.Marshal(s.keydir)
+	if err != nil {
+		return
+	}
+	os.WriteFile("index.json", marshaledIndex, 0755)
 }
 
 func main() {
