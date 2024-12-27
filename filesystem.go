@@ -113,9 +113,10 @@ type Directory struct {
 	File   *file
 	attr   fuse.Attr
 	//extra
-	path   string
-	fs     *FS
-	parent *Directory
+	path     string
+	fs       *FS
+	parent   *Directory
+	children map[string]*fs.Inode
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -125,18 +126,35 @@ func (r *FS) OnAdd(ctx context.Context) {
 
 	// these are empty dirs in the linux filesystem
 	// They could also be served from the user / fileserver
-	home := r.newDir("home")
-	rf.AddChild("home", r.NewPersistentInode(ctx, home, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-	lib := r.newDir("lib")
-	rf.AddChild("lib", r.NewPersistentInode(ctx, lib, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-	media := r.newDir("media")
-	rf.AddChild("media", r.NewPersistentInode(ctx, media, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-	mnt := r.newDir("mnt")
-	rf.AddChild("mnt", r.NewPersistentInode(ctx, mnt, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-	opt := r.newDir("opt")
-	rf.AddChild("opt", r.NewPersistentInode(ctx, opt, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
-	proc := r.newDir("proc")
-	rf.AddChild("proc", r.NewPersistentInode(ctx, proc, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	homeDir := r.newDir("home")
+	homeNode := r.NewPersistentInode(ctx, homeDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("home", homeNode, false)
+	rf.children["home"] = homeNode
+
+	libDir := r.newDir("lib")
+	libNode := r.NewPersistentInode(ctx, libDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("lib", libNode, false)
+	rf.children["lib"] = libNode
+
+	mediaDir := r.newDir("media")
+	mediaNode := r.NewPersistentInode(ctx, mediaDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("lib", mediaNode, false)
+	rf.children["lib"] = mediaNode
+
+	mntDir := r.newDir("mnt")
+	mntNode := r.NewPersistentInode(ctx, mntDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("mnt", mntNode, false)
+	rf.children["mnt"] = mntNode
+
+	optDir := r.newDir("opt")
+	optNode := r.NewPersistentInode(ctx, optDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("opt", optNode, false)
+	rf.children["opt"] = optNode
+
+	procDir := r.newDir("proc")
+	procNode := r.NewPersistentInode(ctx, procDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("proc", procNode, false)
+	rf.children["proc"] = procNode
 }
 
 // Open
@@ -194,6 +212,9 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path)
+	if childInode, found := d.children[name]; found {
+		return childInode, 0
+	}
 
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
