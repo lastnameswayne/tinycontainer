@@ -213,9 +213,9 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 //the worker executes the containers
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	fmt.Println("called lookup on dir", d.path)
+	fmt.Println("called lookup on dir", d.path, d.children)
 	if childDir, found := d.children[name]; found {
-		fmt.Println("Found child in map")
+		fmt.Println("Found child in map", d.children)
 		return &childDir.Inode, 0
 	}
 
