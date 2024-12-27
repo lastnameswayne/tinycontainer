@@ -63,6 +63,7 @@ func (fs *FS) newDir(path string) *Directory {
 	n := time.Now()
 	now := uint64(n.UnixMilli())
 	fmt.Println("NEW DIR", path)
+	children := map[string]*Directory{}
 	return &Directory{
 		attr: fuse.Attr{
 			Atime: now,
@@ -70,8 +71,9 @@ func (fs *FS) newDir(path string) *Directory {
 			Ctime: now,
 			Mode:  uint32(os.ModeDir),
 		},
-		path: path,
-		fs:   fs,
+		children: children,
+		path:     path,
+		fs:       fs,
 	}
 }
 
@@ -116,7 +118,7 @@ type Directory struct {
 	path     string
 	fs       *FS
 	parent   *Directory
-	children map[string]*fs.Inode
+	children map[string]*Directory
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -129,32 +131,32 @@ func (r *FS) OnAdd(ctx context.Context) {
 	homeDir := r.newDir("home")
 	homeNode := r.NewPersistentInode(ctx, homeDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("home", homeNode, false)
-	rf.children["home"] = homeNode
+	rf.children["home"] = homeDir
 
 	libDir := r.newDir("lib")
 	libNode := r.NewPersistentInode(ctx, libDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("lib", libNode, false)
-	rf.children["lib"] = libNode
+	rf.children["lib"] = libDir
 
 	mediaDir := r.newDir("media")
 	mediaNode := r.NewPersistentInode(ctx, mediaDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("lib", mediaNode, false)
-	rf.children["lib"] = mediaNode
+	rf.children["lib"] = mediaDir
 
 	mntDir := r.newDir("mnt")
 	mntNode := r.NewPersistentInode(ctx, mntDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("mnt", mntNode, false)
-	rf.children["mnt"] = mntNode
+	rf.children["mnt"] = mntDir
 
 	optDir := r.newDir("opt")
 	optNode := r.NewPersistentInode(ctx, optDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("opt", optNode, false)
-	rf.children["opt"] = optNode
+	rf.children["opt"] = optDir
 
 	procDir := r.newDir("proc")
 	procNode := r.NewPersistentInode(ctx, procDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("proc", procNode, false)
-	rf.children["proc"] = procNode
+	rf.children["proc"] = procDir
 }
 
 // Open
@@ -212,8 +214,8 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path)
-	if childInode, found := d.children[name]; found {
-		return childInode, 0
+	if childDir, found := d.children[name]; found {
+		return &childDir.Inode, 0
 	}
 
 	path := filepath.Join(d.path, name)
