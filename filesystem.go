@@ -122,6 +122,21 @@ func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
 	rf := r.newDir("app")
 	p.AddChild("app", r.NewPersistentInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+
+	// these are empty dirs in the linux filesystem
+	// They could also be served from the user / fileserver
+	home := r.newDir("home")
+	rf.AddChild("home", r.NewPersistentInode(ctx, home, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	lib := r.newDir("lib")
+	rf.AddChild("lib", r.NewPersistentInode(ctx, lib, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	media := r.newDir("media")
+	rf.AddChild("media", r.NewPersistentInode(ctx, media, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	mnt := r.newDir("mnt")
+	rf.AddChild("mnt", r.NewPersistentInode(ctx, mnt, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	opt := r.newDir("opt")
+	rf.AddChild("opt", r.NewPersistentInode(ctx, opt, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	proc := r.newDir("proc")
+	rf.AddChild("proc", r.NewPersistentInode(ctx, proc, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 }
 
 // Open
