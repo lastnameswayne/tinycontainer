@@ -215,6 +215,7 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path)
 	if childDir, found := d.children[name]; found {
+		fmt.Println("Found child in map")
 		return &childDir.Inode, 0
 	}
 
