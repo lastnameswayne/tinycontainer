@@ -86,7 +86,7 @@ func (fs *FS) newFile(path string) *file {
 			Atime: now,
 			Mtime: now,
 			Ctime: now,
-			Mode:  uint32(os.ModeDir),
+			Mode:  uint32(0644),
 		},
 		path: path,
 		fs:   fs,
@@ -140,8 +140,8 @@ func (r *FS) OnAdd(ctx context.Context) {
 
 	mediaDir := r.newDir("media")
 	mediaNode := r.NewPersistentInode(ctx, mediaDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("lib", mediaNode, false)
-	rf.children["lib"] = mediaDir
+	rf.AddChild("media", mediaNode, false)
+	rf.children["media"] = mediaDir
 
 	mntDir := r.newDir("mnt")
 	mntNode := r.NewPersistentInode(ctx, mntDir, fs.StableAttr{Mode: syscall.S_IFDIR})
@@ -301,14 +301,11 @@ func (d *Directory) getDataFromFileServer(name string) (*file, error) {
 
 }
 
-func (d *Directory) Getattr() fuse.Attr {
+func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	fmt.Println("CALLED GETATTR for", d.attr)
-	if d.File == nil {
-		// root directory
-		return fuse.Attr{Mode: 0755}
-	}
-	d.attr.Mode = 0755
-	return d.attr
+	out.Mode = syscall.S_IFDIR | 0755
+	out.Nlink = 2
+	return 0
 }
 
 func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
