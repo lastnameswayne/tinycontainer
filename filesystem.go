@@ -165,7 +165,7 @@ func (r *FS) OnAdd(ctx context.Context) {
 // Readir
 // Readdirplus
 // Stat
-// var _ = (fs.NodeReaddirer)((*FS)(nil))
+var _ = (fs.NodeReaddirer)((*Directory)(nil))
 
 // CustomDirStream is a custom implementation of the DirStream interface
 type CustomDirStream struct {
@@ -192,21 +192,21 @@ func (ds *CustomDirStream) Next() (fuse.DirEntry, syscall.Errno) {
 func (ds *CustomDirStream) Close() {}
 
 // Readdir lists the contents of the directory
-// func (fs *FS) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-// 	return nil, 0
+func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	entries := []fuse.DirEntry{}
 
-// entries := make([]fuse.DirEntry, len(dirEntries))
-// for i, entry := range dirEntries {
-// 	stat, _ := entry.Info()
-// 	entries[i] = fuse.DirEntry{
-// 		Name: entry.Name(),
-// 		Mode: uint32(stat.Mode()),
-// 		Ino:  stat.Sys().(*syscall.Stat_t).Ino,
-// 	}
-// }
+	// For each child in d.children
+	for name, childDir := range d.children {
+		// childDir.Inode is a directory => Mode bit for directory
+		entries = append(entries, fuse.DirEntry{
+			Name: name,
+			Mode: fuse.S_IFDIR,
+			Ino:  childDir.StableAttr().Ino,
+		})
+	}
 
-// return &CustomDirStream{entries: entries}, 0
-// }
+	return &CustomDirStream{entries: entries}, 0
+}
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 
