@@ -162,6 +162,11 @@ func (r *FS) OnAdd(ctx context.Context) {
 	devNode := r.NewPersistentInode(ctx, devDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("dev", devNode, false)
 	rf.children["dev"] = devDir
+
+	sysDir := r.newDir("sys")
+	sysNode := r.NewPersistentInode(ctx, sysDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("sys", sysNode, false)
+	rf.children["sys"] = sysDir
 }
 
 // Open
