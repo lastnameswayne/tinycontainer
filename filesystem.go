@@ -157,6 +157,11 @@ func (r *FS) OnAdd(ctx context.Context) {
 	procNode := r.NewPersistentInode(ctx, procDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("proc", procNode, false)
 	rf.children["proc"] = procDir
+
+	devDir := r.newDir("dev")
+	devNode := r.NewPersistentInode(ctx, devDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("dev", devNode, false)
+	rf.children["dev"] = devDir
 }
 
 // Open
