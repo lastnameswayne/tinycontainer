@@ -306,7 +306,7 @@ func (d *Directory) isFile(name string) (bool, error) {
 	//if getDataFromFileServer returns not found, we have a directory
 	_, _, err := d.getDataFromFileServer(name)
 	if err != nil {
-		if err == fmt.Errorf("NOT FOUND ON FILESERVER") {
+		if errors.Is(err, fmt.Errorf("NOT FOUND ON FILESERVER")) {
 			fmt.Println(name, "is not a file")
 			return false, nil
 		}
