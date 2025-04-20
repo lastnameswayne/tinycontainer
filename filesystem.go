@@ -325,13 +325,14 @@ func (d *Directory) isFile(name string) (bool, error) {
 }
 
 func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
-	if d.path != "app" {
-		d.path = strings.TrimPrefix(d.path, "app")
+	path := d.path
+	if path != "app" {
+		path = strings.TrimPrefix(path, "app")
 	}
 	if string(d.path[0]) == "/" {
-		d.path = d.path[:1]
+		path = d.path[:1]
 	}
-	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", d.path+"/"+name)
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/"+name)
 	fmt.Println("CALLING URL WITH", requestUrl)
 	buffer := bytes.NewBuffer([]byte{})
 	req, err := http.NewRequest("GET", requestUrl, buffer)
