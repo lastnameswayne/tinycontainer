@@ -76,6 +76,7 @@ func (fs *FS) newDir(path string) *Directory {
 		children: children,
 		path:     path,
 		fs:       fs,
+		KeyDir:   make(map[string]string),
 	}
 }
 
