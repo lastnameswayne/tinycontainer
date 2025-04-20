@@ -29,6 +29,8 @@ import (
 	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
+var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
+
 type FS struct {
 	fs.Inode
 
@@ -306,7 +308,7 @@ func (d *Directory) isFile(name string) (bool, error) {
 	//if getDataFromFileServer returns not found, we have a directory
 	_, _, err := d.getDataFromFileServer(name)
 	if err != nil {
-		if errors.Is(err, fmt.Errorf("NOT FOUND ON FILESERVER")) {
+		if errors.Is(err, ErrNotFoundOnFileServer) {
 			fmt.Println(name, "is not a file")
 			return false, nil
 		}
@@ -343,7 +345,7 @@ func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
 	// Assume `received` is the string received from the client
 	parts := strings.SplitN(string(filecontent), "|||", 2)
 	if strings.Contains(string(filecontent), "Not found") {
-		return "", "", fmt.Errorf("NOT FOUND ON FILESERVER")
+		return "", "", ErrNotFoundOnFileServer
 	}
 	if len(parts) < 2 {
 		fmt.Println("PARTS", parts)
