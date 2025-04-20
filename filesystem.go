@@ -96,7 +96,7 @@ func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, fullPath
 			fmt.Println("child exists")
 			current = child
 		} else {
-			newDir := r.newDir(strings.Join(parts[:i], "/"))
+			newDir := r.newDir(strings.Join(parts[:i+1], "/"))
 			newNode := r.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 			current.AddChild(part, newNode, false)
 			current.children[part] = newDir
