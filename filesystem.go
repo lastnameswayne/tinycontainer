@@ -77,15 +77,14 @@ func (fs *FS) newDir(path string) *Directory {
 	}
 }
 
-func (r *FS) ensureDir(ctx context.Context, parent *Directory, path string) *Directory {
+func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, path string) *Directory {
 	parts := strings.Split(path, "/")
-	current := parent
-
 	for _, part := range parts {
 		if current.children == nil {
 			current.children = make(map[string]*Directory)
 		}
 		if child, exists := current.children[part]; exists {
+			fmt.Println("child exists")
 			current = child
 		} else {
 			newDir := r.newDir(part)
@@ -262,7 +261,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 	if filepath.Ext(path) == "" {
-		return &d.fs.ensureDir(ctx, d.parent, path).Inode, 0
+		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
 	} else {
 		fmt.Println("looking in cache", d.KeyDir)
 		hash, ok := d.KeyDir[name]
