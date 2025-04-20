@@ -80,12 +80,12 @@ func (fs *FS) newDir(path string) *Directory {
 	}
 }
 
-func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, path string) *Directory {
+func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, fullPath string) *Directory {
 	if parent != nil {
 		current = parent
 	}
-	parts := strings.Split(path, "/")
-	for _, part := range parts {
+	parts := strings.Split(fullPath, "/")
+	for i, part := range parts {
 		if current.children == nil {
 			current.children = make(map[string]*Directory)
 		}
@@ -93,7 +93,8 @@ func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, path str
 			fmt.Println("child exists")
 			current = child
 		} else {
-			newDir := r.newDir(part)
+			path := parts[:i]
+			newDir := r.newDir(strings.Join(path, "/"))
 			newNode := r.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 			current.AddChild(part, newNode, false)
 			current.children[part] = newDir
