@@ -82,7 +82,7 @@ func (r *FS) ensureDir(ctx context.Context, parent *Directory, path string) *Dir
 	current := parent
 
 	for _, part := range parts {
-		if current.children == nil {
+		if current == nil || current.children == nil {
 			current.children = make(map[string]*Directory)
 		}
 		if child, exists := current.children[part]; exists {
