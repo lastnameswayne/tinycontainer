@@ -265,7 +265,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 }
 
 func (d *Directory) getDataFromFileServer(name string) (*file, error) {
+	if string(d.path[0]) == "/" {
+		d.path = d.path[:1]
+	}
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", d.path+"/"+name)
+	fmt.Println("CALLING fileserver WITH", requestUrl)
 	buffer := bytes.NewBuffer([]byte{})
 	req, err := http.NewRequest("GET", requestUrl, buffer)
 	if err != nil {

@@ -33,12 +33,12 @@ func main() {
 				saveCmd := exec.Command("docker", "image", "save", "hello-py")
 				outputFile, err := os.Create("test.tar")
 				if err != nil {
-					log.Fatal(err)
+					log.Fatal("error", err)
 				}
 				defer outputFile.Close()
 				saveCmd.Stdout = outputFile
 				if err := buildCmd.Run(); err != nil {
-					log.Fatal(err)
+					log.Fatal("build", err)
 				}
 				if err := saveCmd.Run(); err != nil {
 					log.Fatal(err)

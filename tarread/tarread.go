@@ -234,22 +234,18 @@ func sendFile(file KeyValue, url string) {
 		},
 	}
 
-	// Marshal the KeyValue struct into JSON
 	jsonData, err := json.Marshal(file)
 	if err != nil {
 		log.Fatalf("Error encoding JSON: %v", err)
 	}
 
-	// Create a new HTTP request
 	req, err := http.NewRequest("POST", url+"/upload", bytes.NewBuffer(jsonData))
 	if err != nil {
 		log.Fatalf("Error creating HTTP request: %v", err)
 	}
 
-	// Set the content type to application/json
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send the HTTP request
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("Error sending HTTP request: %v", err)
