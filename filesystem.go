@@ -289,7 +289,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		}
 	}
 
-	file, err := d.getFileFromFileServer(name)
+	file, hash, err := d.getFileFromFileServer(name)
 	if err != nil {
 		return nil, 1
 	}
@@ -361,10 +361,10 @@ func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
 	return hash, filecontentstring, nil
 }
 
-func (d *Directory) getFileFromFileServer(name string) (*file, error) {
+func (d *Directory) getFileFromFileServer(name string) (*file, string, error) {
 	hash, filecontentstring, err := d.getDataFromFileServer(name)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	file := &file{
@@ -374,7 +374,7 @@ func (d *Directory) getFileFromFileServer(name string) (*file, error) {
 	}
 	file.attr.Mode = 0777
 	file.attr.Size = uint64(len(filecontentstring))
-	return file, nil
+	return file, hash, nil
 }
 
 func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
