@@ -78,6 +78,9 @@ func (fs *FS) newDir(path string) *Directory {
 }
 
 func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, path string) *Directory {
+	if parent != nil {
+		current = parent
+	}
 	parts := strings.Split(path, "/")
 	for _, part := range parts {
 		if current.children == nil {
@@ -260,40 +263,58 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
-	if filepath.Ext(path) == "" {
-		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
-	} else {
-		fmt.Println("looking in cache", d.KeyDir)
-		hash, ok := d.KeyDir[name]
-		for key := range d.KeyDir {
-			fmt.Println(key)
-		}
-		if ok {
-			fmt.Println("ok", ok, "hash", hash)
-			_, err := os.Stat("./" + hash)
-			fileExists := !errors.Is(err, os.ErrNotExist)
-			if fileExists {
-				path = "./" + hash
-				return &d.fs.newFile(path).Inode, 0
-			}
-		}
 
-		file, err := d.getDataFromFileServer(name)
-		if err != nil {
-			return nil, 1
-		}
-		df := d.NewInode(
-			ctx, file,
-			fs.StableAttr{Ino: 0})
-
-		d.AddChild(hash, df, false)
-		d.KeyDir[d.path+"/"+name] = hash
-		return df, 0
-
+	isFile, err := d.isFile(name)
+	if err != nil {
+		return nil, 1
 	}
+	if !isFile {
+		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
+	}
+
+	fmt.Println("looking in cache", d.KeyDir)
+	hash, ok := d.KeyDir[name]
+	for key := range d.KeyDir {
+		fmt.Println(key)
+	}
+	if ok {
+		fmt.Println("ok", ok, "hash", hash)
+		_, err := os.Stat("./" + hash)
+		fileExists := !errors.Is(err, os.ErrNotExist)
+		if fileExists {
+			path = "./" + hash
+			return &d.fs.newFile(path).Inode, 0
+		}
+	}
+
+	file, err := d.getFileFromFileServer(name)
+	if err != nil {
+		return nil, 1
+	}
+	df := d.NewInode(
+		ctx, file,
+		fs.StableAttr{Ino: 0})
+
+	d.AddChild(hash, df, false)
+	d.KeyDir[d.path+"/"+name] = hash
+	return df, 0
+
 }
 
-func (d *Directory) getDataFromFileServer(name string) (*file, error) {
+func (d *Directory) isFile(name string) (bool, error) {
+	//if getDataFromFileServer returns not found, we have a directory
+	_, _, err := d.getDataFromFileServer(name)
+	if err != nil {
+		if err == fmt.Errorf("NOT FOUND ON FILESERVER") {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
 	if string(d.path[0]) == "/" {
 		d.path = d.path[:1]
 	}
@@ -318,7 +339,7 @@ func (d *Directory) getDataFromFileServer(name string) (*file, error) {
 	// Assume `received` is the string received from the client
 	parts := strings.SplitN(string(filecontent), "|||", 2)
 	if strings.Contains(string(filecontent), "Not found") {
-		return nil, fmt.Errorf("NOT FOUND ON FILESERVER")
+		return "", "", fmt.Errorf("NOT FOUND ON FILESERVER")
 	}
 	if len(parts) < 2 {
 		fmt.Println("PARTS", parts)
@@ -328,7 +349,17 @@ func (d *Directory) getDataFromFileServer(name string) (*file, error) {
 	hash := parts[0]
 	filecontentstring := parts[1]
 
+	defer resp.Body.Close()
 	fmt.Println("received", string(filecontent))
+
+	return hash, filecontentstring, nil
+}
+
+func (d *Directory) getFileFromFileServer(name string) (*file, error) {
+	hash, filecontentstring, err := d.getDataFromFileServer(name)
+	if err != nil {
+		return nil, err
+	}
 
 	file := &file{
 		Data: []byte(filecontentstring),
@@ -336,12 +367,8 @@ func (d *Directory) getDataFromFileServer(name string) (*file, error) {
 		path: "./" + hash,
 	}
 	file.attr.Mode = 0777
-	file.attr.Size = uint64(len(filecontent))
-	// Close the response body
-	defer resp.Body.Close()
-
+	file.attr.Size = uint64(len(filecontentstring))
 	return file, nil
-
 }
 
 func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
