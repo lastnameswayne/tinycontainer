@@ -82,7 +82,7 @@ func (r *FS) ensureDir(ctx context.Context, parent *Directory, path string) *Dir
 	current := parent
 
 	for _, part := range parts {
-		if current == nil || current.children == nil {
+		if current.children == nil {
 			current.children = make(map[string]*Directory)
 		}
 		if child, exists := current.children[part]; exists {
@@ -151,41 +151,49 @@ func (r *FS) OnAdd(ctx context.Context) {
 	// these are empty dirs in the linux filesystem
 	// They could also be served from the user / fileserver
 	homeDir := r.newDir("home")
+	homeDir.parent = rf
 	homeNode := r.NewPersistentInode(ctx, homeDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("home", homeNode, false)
 	rf.children["home"] = homeDir
 
 	libDir := r.newDir("lib")
+	libDir.parent = rf
 	libNode := r.NewPersistentInode(ctx, libDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("lib", libNode, false)
 	rf.children["lib"] = libDir
 
 	mediaDir := r.newDir("media")
+	mediaDir.parent = rf
 	mediaNode := r.NewPersistentInode(ctx, mediaDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("media", mediaNode, false)
 	rf.children["media"] = mediaDir
 
 	mntDir := r.newDir("mnt")
+	mntDir.parent = rf
 	mntNode := r.NewPersistentInode(ctx, mntDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("mnt", mntNode, false)
 	rf.children["mnt"] = mntDir
 
 	optDir := r.newDir("opt")
+	optDir.parent = rf
 	optNode := r.NewPersistentInode(ctx, optDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("opt", optNode, false)
 	rf.children["opt"] = optDir
 
 	procDir := r.newDir("proc")
+	procDir.parent = rf
 	procNode := r.NewPersistentInode(ctx, procDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("proc", procNode, false)
 	rf.children["proc"] = procDir
 
 	devDir := r.newDir("dev")
+	devDir.parent = rf
 	devNode := r.NewPersistentInode(ctx, devDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("dev", devNode, false)
 	rf.children["dev"] = devDir
 
 	sysDir := r.newDir("sys")
+	sysDir.parent = rf
 	sysNode := r.NewPersistentInode(ctx, sysDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("sys", sysNode, false)
 	rf.children["sys"] = sysDir
