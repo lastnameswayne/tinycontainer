@@ -362,7 +362,6 @@ func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
 	filecontentstring := parts[1]
 
 	defer resp.Body.Close()
-	fmt.Println("received", string(filecontent))
 
 	return hash, filecontentstring, nil
 }
