@@ -225,7 +225,7 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path, d.children)
 	if childDir, found := d.children[name]; found {
-		fmt.Println("Found child in map", d.children)
+		fmt.Println("Found child in map", name, d.children)
 		return &childDir.Inode, 0
 	}
 
@@ -269,7 +269,7 @@ func (d *Directory) getDataFromFileServer(name string) (*file, error) {
 		d.path = d.path[:1]
 	}
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", d.path+"/"+name)
-	fmt.Println("CALLING fileserver WITH", requestUrl)
+	fmt.Println("CALLING URL WITH", requestUrl)
 	buffer := bytes.NewBuffer([]byte{})
 	req, err := http.NewRequest("GET", requestUrl, buffer)
 	if err != nil {
