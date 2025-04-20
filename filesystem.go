@@ -420,7 +420,7 @@ func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 }
 
 func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
-	fmt.Println("OPENING FILE", f.Data)
+	fmt.Println("OPENING FILE", f.path)
 
 	if f.Data == nil {
 		fmt.Println("Data is nil, attempting to read")
