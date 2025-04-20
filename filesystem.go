@@ -325,6 +325,7 @@ func (d *Directory) isFile(name string) (bool, error) {
 }
 
 func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
+	d.path = strings.TrimPrefix(d.path, "app")
 	if string(d.path[0]) == "/" {
 		d.path = d.path[:1]
 	}
