@@ -86,6 +86,9 @@ func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, fullPath
 	}
 	parts := strings.Split(fullPath, "/")
 	for i, part := range parts {
+		if i == 0 {
+			continue
+		}
 		if current.children == nil {
 			current.children = make(map[string]*Directory)
 		}
