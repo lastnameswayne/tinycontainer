@@ -302,15 +302,19 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 }
 
 func (d *Directory) isFile(name string) (bool, error) {
+	fmt.Println("Checking if", name, "is a file")
 	//if getDataFromFileServer returns not found, we have a directory
 	_, _, err := d.getDataFromFileServer(name)
 	if err != nil {
 		if err == fmt.Errorf("NOT FOUND ON FILESERVER") {
+			fmt.Println(name, "is not a file")
 			return false, nil
 		}
+		fmt.Println("Error occurred while checking if", name, "is a file:", err)
 		return false, err
 	}
 
+	fmt.Println(name, "is a file")
 	return true, nil
 }
 
