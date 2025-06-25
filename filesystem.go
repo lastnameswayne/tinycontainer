@@ -351,7 +351,7 @@ func (d *Directory) getDataFromFileServer(name string) (string, []byte, error) {
 	// Assume `received` is the string received from the client
 	parts := bytes.SplitN(filecontent, []byte("|||"), 2)
 	if len(parts) < 2 {
-		return "", "", fmt.Errorf("bad format: missing delimiter")
+		return "", nil, fmt.Errorf("bad format: missing delimiter")
 	}
 	hash := string(parts[0])
 	binaryContent := parts[1]
