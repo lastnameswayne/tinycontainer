@@ -79,9 +79,12 @@ func Export(tarfile string, url string) {
 	if err != nil {
 		panic(err)
 	}
-	// for _, file := range result {
-	// 	sendFile(file, url)
-	// }
+	for _, file := range result {
+		if file.Key != "usr/local/bin/python3.10" {
+			continue
+		}
+		sendFile(file, url)
+	}
 }
 
 func tarFileToEntries(path string) ([]KeyValue, error) {
@@ -241,6 +244,7 @@ func sendFile(file KeyValue, url string) {
 			},
 		},
 	}
+	fmt.Println("sencding", file.Key, "of size", len(file.Value))
 
 	req, err := http.NewRequest("PUT", url+"/upload", bytes.NewReader(file.Value))
 	if err != nil {

@@ -104,7 +104,7 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	s.mutex.Lock()
 	s.keydir[keyFromHeader] = encoded
-	fmt.Println("set key", keyFromHeader)
+	fmt.Println("set key", keyFromHeader, "of size", len(fileContent))
 	s.mutex.Unlock()
 
 	parts := strings.Split(encoded, "/")
