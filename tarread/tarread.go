@@ -79,9 +79,9 @@ func Export(tarfile string, url string) {
 	if err != nil {
 		panic(err)
 	}
-	for _, file := range result {
-		sendFile(file, url)
-	}
+	// for _, file := range result {
+	// 	sendFile(file, url)
+	// }
 }
 
 func tarFileToEntries(path string) ([]KeyValue, error) {
@@ -109,7 +109,7 @@ func tarFileToEntries(path string) ([]KeyValue, error) {
 		filepathStr := filepath.Clean(header.Name)
 		// _, base := filepath.Split(filepathStr)
 
-		fmt.Println("filepath", filepathStr)
+		// fmt.Println("filepath", filepathStr)
 		// attr := attrFromHeader(header)
 
 		if header.Typeflag == tar.TypeDir {
@@ -142,6 +142,14 @@ func readLayer(f *os.File, dstDir string) error {
 		}
 
 		target := filepath.Join(dstDir, header.Name)
+
+		base := filepath.Base(header.Name)
+		if strings.HasPrefix(base, "python3.10") {
+			fmt.Println(base)
+			stat, _ := f.Stat()
+			size := stat.Size()
+			fmt.Println(size)
+		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
@@ -234,17 +242,13 @@ func sendFile(file KeyValue, url string) {
 		},
 	}
 
-	jsonData, err := json.Marshal(file)
-	if err != nil {
-		log.Fatalf("Error encoding JSON: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", url+"/upload", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("PUT", url+"/upload", bytes.NewReader(file.Value))
 	if err != nil {
 		log.Fatalf("Error creating HTTP request: %v", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-File-Name", file.Key)
 
 	resp, err := client.Do(req)
 	if err != nil {

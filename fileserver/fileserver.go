@@ -92,14 +92,7 @@ type KeyValue struct {
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
-	var kv KeyValue
-	err := json.NewDecoder(r.Body).Decode(&kv)
-	if err != nil {
-		fmt.Println(err, kv)
-		http.Error(w, "Error decoding JSON", http.StatusBadRequest)
-		return
-	}
-	fileContent := kv.Value
+	fileContent, _ := io.ReadAll(r.Body)
 
 	//hash of decodedValue
 	h := sha1.New()
@@ -107,9 +100,11 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 	hash := h.Sum(nil)
 	encoded := hex.EncodeToString(hash)
 
+	keyFromHeader := r.Header.Get("X-File-Name")
+
 	s.mutex.Lock()
-	s.keydir[kv.Key] = encoded
-	fmt.Println("set key", kv.Key)
+	s.keydir[keyFromHeader] = encoded
+	fmt.Println("set key", keyFromHeader)
 	s.mutex.Unlock()
 
 	parts := strings.Split(encoded, "/")
@@ -121,7 +116,7 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err = os.WriteFile(_dirName+"/"+encoded, fileContent, os.ModePerm)
+	err := os.WriteFile(_dirName+"/"+encoded, fileContent, os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
