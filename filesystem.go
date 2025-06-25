@@ -324,7 +324,7 @@ func (d *Directory) isFile(name string) (bool, error) {
 	return true, nil
 }
 
-func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
+func (d *Directory) getDataFromFileServer(name string) (string, []byte, error) {
 	path := d.path
 	if path != "app" {
 		path = strings.TrimPrefix(path, "app")
@@ -349,36 +349,31 @@ func (d *Directory) getDataFromFileServer(name string) (string, string, error) {
 	}
 
 	// Assume `received` is the string received from the client
-	parts := strings.SplitN(string(filecontent), "|||", 2)
-	if strings.Contains(string(filecontent), "Not found") {
-		return "", "", ErrNotFoundOnFileServer
-	}
+	parts := bytes.SplitN(filecontent, []byte("|||"), 2)
 	if len(parts) < 2 {
-		fmt.Println("PARTS", parts)
-		fmt.Println(string(filecontent))
-		panic("wrong input from response object")
+		return "", "", fmt.Errorf("bad format: missing delimiter")
 	}
-	hash := parts[0]
-	filecontentstring := parts[1]
+	hash := string(parts[0])
+	binaryContent := parts[1]
 
 	defer resp.Body.Close()
 
-	return hash, filecontentstring, nil
+	return hash, binaryContent, nil
 }
 
 func (d *Directory) getFileFromFileServer(name string) (*file, string, error) {
-	hash, filecontentstring, err := d.getDataFromFileServer(name)
+	hash, bytes, err := d.getDataFromFileServer(name)
 	if err != nil {
 		return nil, "", err
 	}
 
 	file := &file{
-		Data: []byte(filecontentstring),
+		Data: bytes,
 		rc:   d.rc,
 		path: "./" + hash,
 	}
 	file.attr.Mode = 0777
-	file.attr.Size = uint64(len(filecontentstring))
+	file.attr.Size = uint64(len(bytes))
 	return file, hash, nil
 }
 
