@@ -350,6 +350,9 @@ func (d *Directory) getDataFromFileServer(name string) (string, []byte, error) {
 
 	// Assume `received` is the string received from the client
 	parts := bytes.SplitN(filecontent, []byte("|||"), 2)
+	if strings.Contains(string(filecontent), "Not found") {
+		return "", nil ErrNotFoundOnFileServer
+	}
 	if len(parts) < 2 {
 		return "", nil, fmt.Errorf("bad format: missing delimiter")
 	}
