@@ -275,8 +275,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, 1
 	}
 	if !isFile {
+		if strings.Contains(name, ".so") {
+			return nil, syscall.ENOENT
+		}
 		fmt.Println("returning ENOENT for file", name)
-		return nil, syscall.ENOENT
+		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
 	}
 
 	fmt.Println("looking in cache", d.KeyDir)
