@@ -29,7 +29,7 @@ func main() {
 			Action: func(ctx *cli.Context) error {
 				start := time.Now()
 				fmt.Println("building docker image and generating tar ball...")
-				buildCmd := exec.Command("docker", "build", "--tag", "hello-py", ".")
+				buildCmd := exec.Command("docker", "buildx", "build", "--platform", "linux/amd64", "--tag", "hello-py", "--load", ".")
 				saveCmd := exec.Command("docker", "image", "save", "hello-py")
 				outputFile, err := os.Create("test.tar")
 				if err != nil {

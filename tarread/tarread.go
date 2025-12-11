@@ -79,12 +79,9 @@ func Export(tarfile string, url string) {
 	if err != nil {
 		panic(err)
 	}
-	for _, file := range result {
-		if file.Key != "usr/local/bin/python3.10" {
-			continue
-		}
-		sendFile(file, url)
-	}
+	// for _, file := range result {
+	// 	sendFile(file, url)
+	// }
 }
 
 func tarFileToEntries(path string) ([]KeyValue, error) {
@@ -146,13 +143,6 @@ func readLayer(f *os.File, dstDir string) error {
 
 		target := filepath.Join(dstDir, header.Name)
 
-		base := filepath.Base(header.Name)
-		if strings.HasPrefix(base, "python3.10") {
-			fmt.Println(base)
-			stat, _ := f.Stat()
-			size := stat.Size()
-			fmt.Println(size)
-		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
@@ -173,6 +163,13 @@ func readLayer(f *os.File, dstDir string) error {
 			if _, err := io.Copy(outf, reader); err != nil {
 				outf.Close()
 				return fmt.Errorf("copy file error: %v", err)
+			}
+			base := filepath.Base(header.Name)
+			if strings.Contains(base, "python3.10") {
+				fmt.Println(base, header.Name)
+				stat, _ := outf.Stat()
+				size := stat.Size()
+				fmt.Println(size)
 			}
 			outf.Close()
 		default:
@@ -244,7 +241,7 @@ func sendFile(file KeyValue, url string) {
 			},
 		},
 	}
-	fmt.Println("sencding", file.Key, "of size", len(file.Value))
+	// fmt.Println("sencding", file.Key, "of size", len(file.Value))
 
 	req, err := http.NewRequest("PUT", url+"/upload", bytes.NewReader(file.Value))
 	if err != nil {

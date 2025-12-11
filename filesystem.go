@@ -275,6 +275,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, 1
 	}
 	if !isFile {
+		fmt.Println("returning ENOENT for file", name)
 		return nil, syscall.ENOENT
 	}
 
