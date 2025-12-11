@@ -275,7 +275,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, 1
 	}
 	if !isFile {
-		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
+		return nil, syscall.ENOENT
 	}
 
 	fmt.Println("looking in cache", d.KeyDir)
