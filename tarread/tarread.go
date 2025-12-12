@@ -21,6 +21,11 @@ type KeyValue struct {
 	Value []byte `json:"value"` // Base64 encoded string of the binary data
 }
 
+type Symlink struct {
+	Name     string
+	Linkname string
+}
+
 func Export(tarfile string, url string) {
 	tempDir, err := os.MkdirTemp("", "image-extract-")
 	if err != nil {
@@ -56,6 +61,7 @@ func Export(tarfile string, url string) {
 		log.Fatalf("Cannot create rootfsDir: %v", err)
 	}
 
+	allSymlinks := []Symlink{}
 	for _, layer := range manifests[0].Layers {
 		f, err := os.Open(filepath.Join(tempDir, layer))
 		if err != nil {
@@ -63,7 +69,9 @@ func Export(tarfile string, url string) {
 		}
 
 		fmt.Println("layer", f.Name(), layer)
-		err = readLayer(f, rootfsDir)
+		symlinks, err := readLayer(f, rootfsDir)
+		allSymlinks = append(allSymlinks, symlinks...)
+
 		f.Close()
 		if err != nil {
 			continue
@@ -79,9 +87,23 @@ func Export(tarfile string, url string) {
 	if err != nil {
 		panic(err)
 	}
-	// for _, file := range result {
-	// 	sendFile(file, url)
-	// }
+
+	symlinkEntries, err := buildSymlinkEntries(rootfsDir, allSymlinks)
+	if err != nil {
+		panic(err)
+	}
+
+	result = append(result, symlinkEntries...)
+
+	for _, file := range result {
+		if len(file.Value) == 0 {
+			continue
+		}
+		if strings.Contains(file.Key, "ld-linux-x86-64") {
+			fmt.Println("file", file.Key, len(file.Value))
+		}
+		sendFile(file, url)
+	}
 }
 
 func tarFileToEntries(path string) ([]KeyValue, error) {
@@ -128,7 +150,8 @@ func tarFileToEntries(path string) ([]KeyValue, error) {
 	return result, nil
 }
 
-func readLayer(f *os.File, dstDir string) error {
+func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
+	symlinks := []Symlink{}
 	reader := tar.NewReader(f)
 	defer f.Close()
 	for {
@@ -137,7 +160,7 @@ func readLayer(f *os.File, dstDir string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error reading tar: %v", err)
+			return nil, fmt.Errorf("error reading tar: %v", err)
 
 		}
 
@@ -146,36 +169,139 @@ func readLayer(f *os.File, dstDir string) error {
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
-				return fmt.Errorf("mkdir error: %v", err)
+				return nil, fmt.Errorf("mkdir error: %v", err)
 
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return fmt.Errorf("mkdir error: %v", err)
+				return nil, fmt.Errorf("mkdir error: %v", err)
 			}
 
 			outf, err := os.Create(target)
 			if err != nil {
-				return fmt.Errorf("create file error: %v", err)
+				return nil, fmt.Errorf("create file error: %v", err)
 
 			}
 
 			if _, err := io.Copy(outf, reader); err != nil {
 				outf.Close()
-				return fmt.Errorf("copy file error: %v", err)
+				return nil, fmt.Errorf("copy file error: %v", err)
 			}
 			base := filepath.Base(header.Name)
-			if strings.Contains(base, "python3.10") {
+			if strings.Contains(base, "ld-linux-x86-64") {
 				fmt.Println(base, header.Name)
 				stat, _ := outf.Stat()
 				size := stat.Size()
 				fmt.Println(size)
 			}
 			outf.Close()
+		case tar.TypeSymlink, tar.TypeLink:
+			name := filepath.Clean(header.Name) // normalize
+			link := header.Linkname             // keep raw; resolve later with name context
+			base := filepath.Base(name)
+
+			if strings.Contains(base, "ld-linux-x86-64") {
+				fmt.Println("SYMLINK:", name, "->", link, "header", header.Name)
+			}
+
+			symlinks = append(symlinks, Symlink{
+				Name:     name,
+				Linkname: link,
+			})
+
 		default:
 		}
 	}
-	return nil
+	return symlinks, nil
+
+}
+
+func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, error) {
+	linkMap := make(map[string]string, len(symlinks))
+	for _, s := range symlinks {
+		linkMap[filepath.Clean(s.Name)] = s.Linkname
+	}
+
+	out := make([]KeyValue, 0, len(symlinks))
+	for _, s := range symlinks {
+		linkRel := filepath.Clean(s.Name)
+
+		targetAbs, err := resolve(linkRel, linkMap, rootfsDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %q: %w", linkRel, err)
+		}
+
+		binfo, err := os.Stat(targetAbs)
+		if err != nil {
+			continue
+			// return nil, fmt.Errorf("stat resolved target for %q (%q): %w", linkRel, targetAbs, err)
+		}
+		if binfo.IsDir() {
+			// This is a directory symlink like /bin -> /usr/bin.
+			// I skip directory symlinks currently.
+			continue
+		}
+
+		b, err := os.ReadFile(targetAbs)
+		if err != nil {
+			continue
+			// return nil, fmt.Errorf("read resolved target for %q (%q): %w", linkRel, targetAbs, err)
+		}
+
+		out = append(out, KeyValue{
+			Key:   linkRel,
+			Value: b,
+		})
+	}
+
+	return out, nil
+}
+
+func resolve(start string, linkMap map[string]string, rootfsDir string) (string, error) {
+	cur := filepath.Clean(start)
+	visited := map[string]bool{}
+	for {
+		if visited[cur] {
+			return "", fmt.Errorf("symlink loop detected at %q", cur)
+		}
+		visited[cur] = true
+
+		linkname, isLink := linkMap[cur]
+		if !isLink {
+			return filepath.Join(rootfsDir, cur), nil
+		}
+
+		if strings.HasPrefix(linkname, "/") {
+			cur = filepath.Clean(strings.TrimPrefix(linkname, "/"))
+		} else {
+			baseDir := filepath.Dir(cur)
+			cur = filepath.Clean(filepath.Join(baseDir, linkname))
+		}
+	}
+}
+
+func createSymlinkMapFromLayer(result []KeyValue, symlinks []Symlink) []KeyValue {
+	keyValues := []KeyValue{}
+	for _, symlink := range symlinks {
+		for _, val := range result {
+			if strings.Contains(symlink.Linkname, "ld-linux-x86-64") && strings.Contains(val.Key, "ld-linux-x86-64") {
+				fmt.Println(symlink.Linkname, symlink.Name, val.Key)
+			}
+			if symlink.Linkname != val.Key {
+				continue
+			}
+			fmt.Print("found", symlink.Name, len(val.Value))
+			keyValue := KeyValue{
+				Key:   symlink.Name,
+				Value: val.Value,
+			}
+
+			keyValues = append(keyValues, keyValue)
+		}
+
+	}
+
+	return keyValues
 
 }
 
