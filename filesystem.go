@@ -392,7 +392,7 @@ func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Attr
 }
 
 func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	fmt.Println("CALLING READ", f.Data)
+	fmt.Println("CALLING READ", f.path, len(f.Data))
 	end := int(off) + len(dest)
 	if end > len(f.Data) {
 		end = len(f.Data)
