@@ -22,8 +22,8 @@ type KeyValue struct {
 }
 
 type Symlink struct {
-	Name     string
-	Linkname string
+	Name     string // where the symlink EXISTS (the path of the symlink)
+	Linkname string // what the symlink POINTS TO (the target path)
 }
 
 func Export(tarfile string, url string) {
@@ -217,67 +217,59 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 }
 
 func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, error) {
-	linkMap := make(map[string]string, len(symlinks))
-	for _, s := range symlinks {
-		linkMap[filepath.Clean(s.Name)] = s.Linkname
+	// create a map from the symlink name to the real file name
+	symlinkMap := map[string]string{}
+	for _, symlink := range symlinks {
+		symlinkMap[filepath.Clean(symlink.Name)] = symlink.Linkname
 	}
 
-	out := make([]KeyValue, 0, len(symlinks))
-	for _, s := range symlinks {
-		linkRel := filepath.Clean(s.Name)
+	out := []KeyValue{}
+	for _, symlink := range symlinks {
+		// recursively look up in symlink map until you find the leaf
 
-		targetAbs, err := resolve(linkRel, linkMap, rootfsDir)
-		if err != nil {
-			return nil, fmt.Errorf("resolve %q: %w", linkRel, err)
+		resolvedName := filepath.Clean(symlink.Name)
+		for {
+			innerName, ok := symlinkMap[resolvedName]
+			if !ok {
+				break
+			}
+			innerName = filepath.Clean(innerName)
+			isAbsolute := strings.HasPrefix(innerName, "/")
+			if isAbsolute {
+				trimmed := strings.TrimPrefix(innerName, "/")
+				innerName = filepath.Clean(trimmed)
+			} else {
+				linkDir := filepath.Dir(resolvedName)
+				joined := filepath.Join(linkDir, innerName)
+				innerName = filepath.Clean(joined)
+			}
+
+			resolvedName = innerName
 		}
 
-		binfo, err := os.Stat(targetAbs)
+		path := filepath.Join(rootfsDir, resolvedName)
+
+		stat, err := os.Stat(path)
 		if err != nil {
-			continue
-			// return nil, fmt.Errorf("stat resolved target for %q (%q): %w", linkRel, targetAbs, err)
-		}
-		if binfo.IsDir() {
-			// This is a directory symlink like /bin -> /usr/bin.
-			// I skip directory symlinks currently.
 			continue
 		}
 
-		b, err := os.ReadFile(targetAbs)
+		if stat.IsDir() {
+			continue
+		}
+
+		file, err := os.ReadFile(path)
 		if err != nil {
 			continue
-			// return nil, fmt.Errorf("read resolved target for %q (%q): %w", linkRel, targetAbs, err)
 		}
 
 		out = append(out, KeyValue{
-			Key:   linkRel,
-			Value: b,
+			Key:   symlink.Name,
+			Value: file,
 		})
 	}
 
 	return out, nil
-}
-
-func resolve(start string, linkMap map[string]string, rootfsDir string) (string, error) {
-	cur := filepath.Clean(start)
-	visited := map[string]bool{}
-	for {
-		if visited[cur] {
-			return "", fmt.Errorf("symlink loop detected at %q", cur)
-		}
-		visited[cur] = true
-
-		linkname, isLink := linkMap[cur]
-		if !isLink {
-			return filepath.Join(rootfsDir, cur), nil
-		}
-
-		if strings.HasPrefix(linkname, "/") {
-			cur = filepath.Clean(strings.TrimPrefix(linkname, "/"))
-		} else {
-			baseDir := filepath.Dir(cur)
-			cur = filepath.Clean(filepath.Join(baseDir, linkname))
-		}
-	}
 }
 
 func createSymlinkMapFromLayer(result []KeyValue, symlinks []Symlink) []KeyValue {

@@ -275,7 +275,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, 1
 	}
 	if !isFile {
-		if strings.Contains(name, ".so") {
+		if strings.Contains(name, ".so") || strings.Contains(name, ".zip") {
 			return nil, syscall.ENOENT
 		}
 		fmt.Println("returning ENOENT for file", name)
