@@ -66,6 +66,7 @@ func (fs *FS) newDir(path string) *Directory {
 	now := uint64(n.UnixMilli())
 	fmt.Println("NEW DIR", path)
 	children := map[string]*Directory{}
+	files := map[string]*file{}
 	return &Directory{
 		attr: fuse.Attr{
 			Atime: now,
@@ -74,6 +75,7 @@ func (fs *FS) newDir(path string) *Directory {
 			Mode:  uint32(os.ModeDir),
 		},
 		children: children,
+		files:    files,
 		path:     path,
 		fs:       fs,
 		KeyDir:   make(map[string]string),
@@ -107,11 +109,11 @@ func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, fullPath
 	return current
 }
 
-func (fs *FS) newFile(path string) *file {
+func (fs *FS) newFile(path, name string, currentDir *Directory) *file {
 	n := time.Now()
 	now := uint64(n.UnixMilli())
 
-	return &file{
+	file := &file{
 		attr: fuse.Attr{
 			Atime: now,
 			Mtime: now,
@@ -121,6 +123,10 @@ func (fs *FS) newFile(path string) *file {
 		path: path,
 		fs:   fs,
 	}
+
+	currentDir.files[name] = file
+
+	return file
 }
 
 func (f *FS) Root() (*Directory, error) {
@@ -141,14 +147,14 @@ func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 type Directory struct {
 	fs.Inode
 	rc     io.Reader
-	KeyDir map[string]string
-	File   *file
+	KeyDir map[string]string // map from name --> hash
 	attr   fuse.Attr
 	//extra
 	path     string
 	fs       *FS
 	parent   *Directory
-	children map[string]*Directory
+	children map[string]*Directory // directory name to object
+	files    map[string]*file      // file name to object
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -253,6 +259,14 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		})
 	}
 
+	for name, file := range d.files {
+		entries = append(entries, fuse.DirEntry{
+			Name: name,
+			Mode: fuse.S_IFREG,
+			Ino:  file.StableAttr().Ino,
+		})
+	}
+
 	return &CustomDirStream{entries: entries}, 0
 }
 
@@ -283,7 +297,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 
 	fmt.Println("looking in cache", d.KeyDir)
-	hash, ok := d.KeyDir[name]
+	hash, ok := d.KeyDir[d.path+"/"+name]
 	for key := range d.KeyDir {
 		fmt.Println(key)
 	}
@@ -293,7 +307,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		fileExists := !errors.Is(err, os.ErrNotExist)
 		if fileExists {
 			path = "./" + hash
-			return &d.fs.newFile(path).Inode, 0
+			return &d.fs.newFile(path, name, d).Inode, 0
 		}
 	}
 
@@ -303,9 +317,10 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 	df := d.NewInode(
 		ctx, file,
-		fs.StableAttr{Ino: 0})
+		fs.StableAttr{Ino: 0},
+	)
 
-	d.AddChild(hash, df, false)
+	d.AddChild(name, df, false)
 	d.KeyDir[d.path+"/"+name] = hash
 	return df, 0
 
