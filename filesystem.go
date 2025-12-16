@@ -322,6 +322,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	d.AddChild(name, df, false)
 	d.KeyDir[d.path+"/"+name] = hash
+	d.files[name] = file
 	return df, 0
 
 }
