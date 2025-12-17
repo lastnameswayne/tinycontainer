@@ -280,16 +280,10 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	}
 
 	for _, entry := range fileEntries {
-		file := d.mapEntryToFile(entry)
-		df := d.NewInode(
-			ctx, file,
-			fs.StableAttr{Ino: 0},
-		)
-
 		entries = append(entries, fuse.DirEntry{
 			Name: entry.Name,
 			Mode: uint32(entry.Mode),
-			Ino:  df.StableAttr().Ino,
+			Ino:  0,
 		})
 	}
 
@@ -374,26 +368,26 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
-		return KeyValue{}, fmt.Errorf("error creating request: %w", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, err := d.fs.client.Do(req)
 	if err != nil {
-		return KeyValue{}, fmt.Errorf("error sending request: %w", err)
+		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return KeyValue{}, ErrNotFoundOnFileServer
+		return nil, ErrNotFoundOnFileServer
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return KeyValue{}, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
 	var entries []KeyValue
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
-		return KeyValue{}, fmt.Errorf("error decoding response: %w", err)
+		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
 
 	return entries, nil
