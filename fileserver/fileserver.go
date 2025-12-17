@@ -31,25 +31,30 @@ import (
 
 // should expose endpoints for the methods below
 // explre nginx
+const defaultDirName = "fileserverfiles"
+
 type server struct {
-	keydir map[string]string
-	mutex  *sync.Mutex
+	keydir  map[string]string
+	mutex   *sync.Mutex
+	dirName string
 }
 
 func NewServer() server {
-	err := os.MkdirAll("./"+_dirName, os.ModePerm)
+	return NewServerWithDir(defaultDirName)
+}
+
+func NewServerWithDir(dirName string) server {
+	err := os.MkdirAll(dirName, os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
 
 	return server{
-		keydir: map[string]string{},
-		mutex:  &sync.Mutex{},
+		keydir:  map[string]string{},
+		mutex:   &sync.Mutex{},
+		dirName: dirName,
 	}
-
 }
-
-const _dirName = "fileserverfiles"
 
 func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("filepath")
@@ -58,10 +63,6 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		http.Error(w, "filepath is required", http.StatusBadRequest)
 		return
-	}
-
-	for key, val := range s.keydir {
-		fmt.Println("key", key, "val", val)
 	}
 
 	s.mutex.Lock()
@@ -74,7 +75,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := os.OpenFile(_dirName+"/"+hash, os.O_RDWR, 0644)
+	file, err := os.OpenFile(s.dirName+"/"+hash, os.O_RDWR, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -116,7 +117,7 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err := os.WriteFile(_dirName+"/"+encoded, fileContent, os.ModePerm)
+	err := os.WriteFile(s.dirName+"/"+encoded, fileContent, os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
