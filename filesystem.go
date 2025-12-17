@@ -274,11 +274,22 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		})
 	}
 
-	for name, file := range d.files {
+	fileEntries, err := d.getDirectoryContentsFromFileServer()
+	if err != nil {
+		return nil, 1
+	}
+
+	for _, entry := range fileEntries {
+		file := d.mapEntryToFile(entry)
+		df := d.NewInode(
+			ctx, file,
+			fs.StableAttr{Ino: 0},
+		)
+
 		entries = append(entries, fuse.DirEntry{
-			Name: name,
-			Mode: fuse.S_IFREG,
-			Ino:  file.StableAttr().Ino,
+			Name: entry.Name,
+			Mode: uint32(entry.Mode),
+			Ino:  df.StableAttr().Ino,
 		})
 	}
 
@@ -340,7 +351,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 func (d *Directory) isFile(name string) (bool, error) {
 	fmt.Println("Checking if", name, "is a file")
-	//if getDataFromFileServer returns not found, we have a directory
 	entry, err := d.getDataFromFileServer(name)
 	if err != nil {
 		fmt.Println("Error occurred while checking if", name, "is a file:", err)
@@ -351,6 +361,42 @@ func (d *Directory) isFile(name string) (bool, error) {
 		fmt.Println(name, "is a file")
 	}
 	return !entry.IsDir, nil
+}
+
+func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
+	path := d.path
+	if path != "app" {
+		path = strings.TrimPrefix(path, "app")
+	}
+	path = strings.TrimPrefix(path, "/")
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/")
+	fmt.Println("CALLING URL WITH", requestUrl)
+
+	req, err := http.NewRequest("GET", requestUrl, nil)
+	if err != nil {
+		return KeyValue{}, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := d.fs.client.Do(req)
+	if err != nil {
+		return KeyValue{}, fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return KeyValue{}, ErrNotFoundOnFileServer
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return KeyValue{}, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var entries []KeyValue
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return KeyValue{}, fmt.Errorf("error decoding response: %w", err)
+	}
+
+	return entries, nil
 }
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
@@ -395,6 +441,10 @@ func (d *Directory) getFileFromFileServer(name string) (*file, string, error) {
 		return nil, "", err
 	}
 
+	return d.mapEntryToFile(entry), entry.HashValue, nil
+}
+
+func (d *Directory) mapEntryToFile(entry KeyValue) *file {
 	file := &file{
 		Data: entry.Value,
 		rc:   d.rc,
@@ -404,7 +454,7 @@ func (d *Directory) getFileFromFileServer(name string) (*file, string, error) {
 	file.attr.Size = uint64(entry.Size)
 	file.attr.Gid = uint32(entry.Gid)
 
-	return file, entry.HashValue, nil
+	return file
 }
 
 func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
