@@ -108,7 +108,7 @@ func Export(tarfile string, url string) {
 		if len(file.Value) == 0 {
 			continue
 		}
-		if strings.Contains(file.Key, "ld-linux-x86-64") {
+		if strings.Contains(file.Key, "ld-linux-x86-64") || strings.Contains(file.Key, "encodings/__init__") {
 			fmt.Println("file", file.Key, len(file.Value), file.Size, file.Parent)
 		}
 
@@ -116,7 +116,7 @@ func Export(tarfile string, url string) {
 	}
 
 	batchSize := 1000
-	for i := 0; i < len(filteredResult); i = i * batchSize {
+	for i := 0; i < len(filteredResult); i = i + batchSize {
 		start := i
 		end := min(i+batchSize, len(filteredResult))
 		batch := filteredResult[start:end]
@@ -290,8 +290,13 @@ func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, erro
 		}
 
 		out = append(out, KeyValue{
-			Key:   symlink.Name,
-			Value: file,
+			Key:     symlink.Name,
+			Value:   file,
+			Name:    filepath.Base(symlink.Name),
+			Parent:  filepath.Dir(symlink.Name),
+			Size:    stat.Size(),
+			Mode:    int64(stat.Mode().Perm()),
+			ModTime: stat.ModTime().Unix(),
 		})
 	}
 
@@ -413,19 +418,24 @@ func sendFileBatch(files []KeyValue, url string) {
 	}
 
 	batchFiles, err := json.Marshal(files)
+	if err != nil {
+		log.Fatalf("Error marshalling batch files: %v", err)
+	}
 
-	req, err := http.NewRequest("PUT", url+"/upload-batch", bytes.NewReader(batchFiles))
+	req, err := http.NewRequest("PUT", url+"/batch-upload", bytes.NewReader(batchFiles))
 	if err != nil {
 		log.Fatalf("Error creating HTTP request: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
+	fmt.Println("sending to", url+"/batch-upload")
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("Error sending HTTP request: %v", err)
 	}
-
-	// Close the response body
 	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println("response status:", resp.StatusCode, "body:", string(body))
 }

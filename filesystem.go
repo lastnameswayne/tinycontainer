@@ -301,13 +301,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	isFile, err := d.isFile(name)
 	if err != nil {
-		return nil, 1
+		return nil, syscall.ENOENT
 	}
 	if !isFile {
-		if strings.Contains(name, ".so") || strings.Contains(name, ".zip") {
-			return nil, syscall.ENOENT
-		}
-		fmt.Println("returning ENOENT for file", name)
 		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
 	}
 
@@ -345,18 +341,16 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 func (d *Directory) isFile(name string) (bool, error) {
 	fmt.Println("Checking if", name, "is a file")
 	//if getDataFromFileServer returns not found, we have a directory
-	_, err := d.getDataFromFileServer(name)
+	entry, err := d.getDataFromFileServer(name)
 	if err != nil {
-		if errors.Is(err, ErrNotFoundOnFileServer) {
-			fmt.Println(name, "is not a file")
-			return false, nil
-		}
 		fmt.Println("Error occurred while checking if", name, "is a file:", err)
 		return false, err
 	}
-
-	fmt.Println(name, "is a file")
-	return true, nil
+	isFile := !entry.IsDir
+	if !isFile {
+		fmt.Println(name, "is a file")
+	}
+	return !entry.IsDir, nil
 }
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {

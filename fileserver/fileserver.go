@@ -188,6 +188,7 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 	var entries []KeyValue
 	err := json.NewDecoder(r.Body).Decode(&entries)
 	if err != nil {
+		fmt.Println("Invadlid JSON")
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
