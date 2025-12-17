@@ -7,9 +7,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -40,6 +40,21 @@ type FS struct {
 	size   int64
 	client *http.Client
 	KeyDir map[string]string
+}
+
+// KeyValue represents the JSON structure for set requests
+type KeyValue struct {
+	Key       string `json:"key"`
+	Value     []byte `json:"value"` // Base64 encoded binary data
+	HashValue string `json:"value"`
+	Parent    string `json:"parent"`
+	Name      string `json:"name"`
+	IsDir     bool   `json:"is_dir"`
+	Size      int64  `json:"size"`
+	Mode      int64  `json:"mode"`
+	ModTime   int64  `json:"mod_time"`
+	Uid       int    `json:"uid"`
+	Gid       int    `json:"gid"`
 }
 
 var _ = (fs.NodeStatfser)((*FS)(nil))
@@ -330,7 +345,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 func (d *Directory) isFile(name string) (bool, error) {
 	fmt.Println("Checking if", name, "is a file")
 	//if getDataFromFileServer returns not found, we have a directory
-	_, _, err := d.getDataFromFileServer(name)
+	_, err := d.getDataFromFileServer(name)
 	if err != nil {
 		if errors.Is(err, ErrNotFoundOnFileServer) {
 			fmt.Println(name, "is not a file")
@@ -344,7 +359,7 @@ func (d *Directory) isFile(name string) (bool, error) {
 	return true, nil
 }
 
-func (d *Directory) getDataFromFileServer(name string) (string, []byte, error) {
+func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	path := d.path
 	if path != "app" {
 		path = strings.TrimPrefix(path, "app")
@@ -352,52 +367,50 @@ func (d *Directory) getDataFromFileServer(name string) (string, []byte, error) {
 	path = strings.TrimPrefix(path, "/")
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/"+name)
 	fmt.Println("CALLING URL WITH", requestUrl)
-	buffer := bytes.NewBuffer([]byte{})
-	req, err := http.NewRequest("GET", requestUrl, buffer)
+
+	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
-		log.Fatalf("Error creating HTTP request: %v", err)
+		return KeyValue{}, fmt.Errorf("error creating request: %w", err)
 	}
+
 	resp, err := d.fs.client.Do(req)
 	if err != nil {
-		log.Fatalf("Error sending HTTP request: %v", err)
+		return KeyValue{}, fmt.Errorf("error sending request: %w", err)
 	}
-
-	filecontent, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("error reading body: %s\n", err)
-		os.Exit(1)
-	}
-
-	// Assume `received` is the string received from the client
-	parts := bytes.SplitN(filecontent, []byte("|||"), 2)
-	if strings.Contains(string(filecontent), "Not found") {
-		return "", nil, ErrNotFoundOnFileServer
-	}
-	if len(parts) < 2 {
-		return "", nil, fmt.Errorf("bad format: missing delimiter")
-	}
-	hash := string(parts[0])
-	binaryContent := parts[1]
-
 	defer resp.Body.Close()
 
-	return hash, binaryContent, nil
+	if resp.StatusCode == http.StatusNotFound {
+		return KeyValue{}, ErrNotFoundOnFileServer
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return KeyValue{}, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	var entry KeyValue
+	if err := json.NewDecoder(resp.Body).Decode(&entry); err != nil {
+		return KeyValue{}, fmt.Errorf("error decoding response: %w", err)
+	}
+
+	return entry, nil
 }
 
 func (d *Directory) getFileFromFileServer(name string) (*file, string, error) {
-	hash, bytes, err := d.getDataFromFileServer(name)
+	entry, err := d.getDataFromFileServer(name)
 	if err != nil {
 		return nil, "", err
 	}
 
 	file := &file{
-		Data: bytes,
+		Data: entry.Value,
 		rc:   d.rc,
-		path: "./" + hash,
+		path: "./" + entry.HashValue,
 	}
-	file.attr.Mode = 0777
-	file.attr.Size = uint64(len(bytes))
-	return file, hash, nil
+	file.attr.Mode = uint32(entry.Mode)
+	file.attr.Size = uint64(entry.Size)
+	file.attr.Gid = uint32(entry.Gid)
+
+	return file, entry.HashValue, nil
 }
 
 func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {

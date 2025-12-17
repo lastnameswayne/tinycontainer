@@ -89,21 +89,24 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	entry := KeyValue{}
 	json.Unmarshal(filecontent, &entry)
 
-	fmt.Fprintln(w, entry)
+	entry.HashValue = hash
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entry)
 }
 
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
-	Key     string `json:"key"`
-	Value   []byte `json:"value"` // Base64 encoded binary data
-	Parent  string `json:"parent"`
-	Name    string `json:"name"`
-	IsDir   bool   `json:"is_dir"`
-	Size    int64  `json:"size"`
-	Mode    int64  `json:"mode"`
-	ModTime int64  `json:"mod_time"`
-	Uid     int    `json:"uid"`
-	Gid     int    `json:"gid"`
+	Key       string `json:"key"`
+	Value     []byte `json:"value"` // Base64 encoded binary data
+	HashValue string `json:"value"`
+	Parent    string `json:"parent"`
+	Name      string `json:"name"`
+	IsDir     bool   `json:"is_dir"`
+	Size      int64  `json:"size"`
+	Mode      int64  `json:"mode"`
+	ModTime   int64  `json:"mod_time"`
+	Uid       int    `json:"uid"`
+	Gid       int    `json:"gid"`
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
