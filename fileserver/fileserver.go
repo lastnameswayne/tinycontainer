@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 )
 
@@ -91,8 +90,16 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
-	Key   string `json:"key"`
-	Value []byte `json:"value"` // Base64 encoded string of the binary data
+	Key     string `json:"key"`
+	Value   []byte `json:"value"` // Base64 encoded binary data
+	Parent  string `json:"parent"`
+	Name    string `json:"name"`
+	IsDir   bool   `json:"is_dir"`
+	Size    int64  `json:"size"`
+	Mode    int64  `json:"mode"`
+	ModTime int64  `json:"mod_time"`
+	Uid     int    `json:"uid"`
+	Gid     int    `json:"gid"`
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
@@ -107,18 +114,9 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 	keyFromHeader := r.Header.Get("X-File-Name")
 
 	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.keydir[keyFromHeader] = encoded
 	fmt.Println("set key", keyFromHeader, "of size", len(fileContent))
-	s.mutex.Unlock()
-
-	parts := strings.Split(encoded, "/")
-	dirNames := parts[:len(parts)-1]
-	if len(parts) != 1 {
-		err := os.MkdirAll(strings.Join(dirNames, "/"), 0666)
-		if err != nil {
-			panic(err)
-		}
-	}
 
 	err := os.WriteFile(s.dirName+"/"+encoded, fileContent, os.ModePerm)
 	if err != nil {
@@ -133,11 +131,48 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 	os.WriteFile("index.json", marshaledIndex, 0755)
 }
 
+func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
+	var entries []KeyValue
+	err := json.NewDecoder(r.Body).Decode(&entries)
+	if err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	stored := 0
+	for _, entry := range entries {
+		// hash of decodedValue
+		h := sha1.New()
+		h.Write(entry.Value)
+		hash := h.Sum(nil)
+		encoded := hex.EncodeToString(hash)
+
+		err := os.WriteFile(s.dirName+"/"+encoded, entry.Value, os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+
+		s.keydir[entry.Key] = encoded
+		stored = stored + 1
+	}
+
+	fmt.Fprintf(w, "Stored %d files\n", stored)
+	marshaledIndex, err := json.Marshal(s.keydir)
+	if err != nil {
+		return
+	}
+	os.WriteFile("index.json", marshaledIndex, 0755)
+}
+
 func main() {
 	mux := http.NewServeMux()
 	s := NewServer()
 	mux.HandleFunc("/upload", s.handleSet)
 	mux.HandleFunc("/fetch", s.handleGet)
+	mux.HandleFunc("/batch-upload", s.handleSetBatch)
 
 	server := &http.Server{
 		Addr:    ":8443",
