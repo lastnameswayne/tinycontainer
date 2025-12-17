@@ -65,8 +65,8 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	hash, ok := s.keydir[key]
-	s.mutex.Unlock()
 	fmt.Println("key", key, "hash", hash, "ok", ok)
 
 	if !ok {
@@ -77,15 +77,19 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	file, err := os.OpenFile(s.dirName+"/"+hash, os.O_RDWR, 0644)
 	if err != nil {
 		http.Error(w, "Error opening file", http.StatusInternalServerError)
+		return
 	}
 
 	filecontent, err := io.ReadAll(file)
 	if err != nil {
 		http.Error(w, "Error reading file", http.StatusInternalServerError)
+		return
 	}
 
-	message := fmt.Sprintf("%s|||%s", hash, filecontent)
-	fmt.Fprintln(w, message)
+	entry := KeyValue{}
+	json.Unmarshal(filecontent, &entry)
+
+	fmt.Fprintln(w, entry)
 }
 
 // KeyValue represents the JSON structure for set requests
@@ -103,22 +107,29 @@ type KeyValue struct {
 }
 
 func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
-	fileContent, _ := io.ReadAll(r.Body)
-
+	entry := KeyValue{}
+	err := json.NewDecoder(r.Body).Decode(&entry)
+	if err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	//hash of decodedValue
 	h := sha1.New()
-	h.Write(fileContent)
+	h.Write(entry.Value)
 	hash := h.Sum(nil)
 	encoded := hex.EncodeToString(hash)
 
-	keyFromHeader := r.Header.Get("X-File-Name")
-
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	s.keydir[keyFromHeader] = encoded
-	fmt.Println("set key", keyFromHeader, "of size", len(fileContent))
 
-	err := os.WriteFile(s.dirName+"/"+encoded, fileContent, os.ModePerm)
+	s.keydir[entry.Key] = encoded
+	fmt.Println("set key", entry.Key, "of size", len(entry.Value))
+
+	marshalledEntry, err := json.Marshal(entry)
+	if err != nil {
+		panic(err)
+	}
+	err = os.WriteFile(s.dirName+"/"+encoded, marshalledEntry, os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
@@ -144,13 +155,16 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 
 	stored := 0
 	for _, entry := range entries {
-		// hash of decodedValue
 		h := sha1.New()
 		h.Write(entry.Value)
 		hash := h.Sum(nil)
 		encoded := hex.EncodeToString(hash)
 
-		err := os.WriteFile(s.dirName+"/"+encoded, entry.Value, os.ModePerm)
+		marshalledEntry, err := json.Marshal(entry)
+		if err != nil {
+			panic(err)
+		}
+		err = os.WriteFile(s.dirName+"/"+encoded, marshalledEntry, os.ModePerm)
 		if err != nil {
 			panic(err)
 		}

@@ -17,16 +17,16 @@ import (
 
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
-	Key     string `json:"key"`   // This is currently the full path
-	Value   []byte `json:"value"` // Base64 encoded string of the binary data
-	Parent  string
-	Name    string
-	IsDir   bool
-	Size    int64
-	Mode    int64
-	ModTime int64
-	Uid     int
-	Gid     int
+	Key     string `json:"key"`      // Full path
+	Value   []byte `json:"value"`    // Base64 encoded binary data
+	Parent  string `json:"parent"`   // Parent directory path
+	Name    string `json:"name"`     // Basename
+	IsDir   bool   `json:"is_dir"`   // True if directory
+	Size    int64  `json:"size"`     // File size in bytes
+	Mode    int64  `json:"mode"`     // File permissions
+	ModTime int64  `json:"mod_time"` // Last modified timestamp
+	Uid     int    `json:"uid"`      // Owner user ID
+	Gid     int    `json:"gid"`      // Owner group ID
 }
 
 type Symlink struct {
@@ -103,6 +103,7 @@ func Export(tarfile string, url string) {
 
 	result = append(result, symlinkEntries...)
 
+	filteredResult := []KeyValue{}
 	for _, file := range result {
 		if len(file.Value) == 0 {
 			continue
@@ -110,8 +111,12 @@ func Export(tarfile string, url string) {
 		if strings.Contains(file.Key, "ld-linux-x86-64") {
 			fmt.Println("file", file.Key, len(file.Value), file.Size, file.Parent)
 		}
-		// sendFile(file, url)
+
+		filteredResult = append(filteredResult, file)
 	}
+
+	sendFileBatch(filteredResult, url)
+
 }
 
 func tarFileToEntries(path string) ([]KeyValue, error) {
@@ -374,7 +379,6 @@ func sendFile(file KeyValue, url string) {
 			},
 		},
 	}
-	// fmt.Println("sencding", file.Key, "of size", len(file.Value))
 
 	req, err := http.NewRequest("PUT", url+"/upload", bytes.NewReader(file.Value))
 	if err != nil {
@@ -383,6 +387,33 @@ func sendFile(file KeyValue, url string) {
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-File-Name", file.Key)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Error sending HTTP request: %v", err)
+	}
+
+	// Close the response body
+	defer resp.Body.Close()
+}
+
+func sendFileBatch(files []KeyValue, url string) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	batchFiles, err := json.Marshal(files)
+
+	req, err := http.NewRequest("PUT", url+"/upload-batch", bytes.NewReader(batchFiles))
+	if err != nil {
+		log.Fatalf("Error creating HTTP request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
