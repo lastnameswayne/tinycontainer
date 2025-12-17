@@ -17,8 +17,16 @@ import (
 
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
-	Key   string `json:"key"`
-	Value []byte `json:"value"` // Base64 encoded string of the binary data
+	Key     string `json:"key"`   // This is currently the full path
+	Value   []byte `json:"value"` // Base64 encoded string of the binary data
+	Parent  string
+	Name    string
+	IsDir   bool
+	Size    int64
+	Mode    int64
+	ModTime int64
+	Uid     int
+	Gid     int
 }
 
 type Symlink struct {
@@ -100,9 +108,9 @@ func Export(tarfile string, url string) {
 			continue
 		}
 		if strings.Contains(file.Key, "ld-linux-x86-64") {
-			fmt.Println("file", file.Key, len(file.Value))
+			fmt.Println("file", file.Key, len(file.Value), file.Size, file.Parent)
 		}
-		sendFile(file, url)
+		// sendFile(file, url)
 	}
 }
 
@@ -134,17 +142,24 @@ func tarFileToEntries(path string) ([]KeyValue, error) {
 		// fmt.Println("filepath", filepathStr)
 		// attr := attrFromHeader(header)
 
-		if header.Typeflag == tar.TypeDir {
-			continue
-		} else {
-			// Handle files
-			content := buf.Bytes()
-			kv := KeyValue{
-				Key:   filepathStr,
-				Value: content,
-			}
-			result = append(result, kv)
+		isDir := header.Typeflag == tar.TypeDir
+		content := []byte{}
+		if !isDir {
+			content = buf.Bytes()
 		}
+		kv := KeyValue{
+			Key:     filepathStr,
+			Value:   content,
+			Name:    filepath.Base(header.Name),
+			Parent:  filepath.Dir(header.Name),
+			IsDir:   isDir,
+			Size:    header.Size,
+			Mode:    header.Mode,
+			ModTime: header.ModTime.Unix(),
+			Uid:     header.Uid,
+			Gid:     header.Gid,
+		}
+		result = append(result, kv)
 	}
 
 	return result, nil

@@ -77,10 +77,13 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	file, err := os.OpenFile(s.dirName+"/"+hash, os.O_RDWR, 0644)
 	if err != nil {
-		panic(err)
+		http.Error(w, "Error opening file", http.StatusInternalServerError)
 	}
 
 	filecontent, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "Error reading file", http.StatusInternalServerError)
+	}
 
 	message := fmt.Sprintf("%s|||%s", hash, filecontent)
 	fmt.Fprintln(w, message)
