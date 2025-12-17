@@ -115,8 +115,14 @@ func Export(tarfile string, url string) {
 		filteredResult = append(filteredResult, file)
 	}
 
-	sendFileBatch(filteredResult, url)
-
+	batchSize := 1000
+	for i := 0; i < len(filteredResult); i = i * batchSize {
+		start := i
+		end := min(i+batchSize, len(filteredResult))
+		batch := filteredResult[start:end]
+		fmt.Println("sending batch...", len(batch))
+		sendFileBatch(batch, url)
+	}
 }
 
 func tarFileToEntries(path string) ([]KeyValue, error) {

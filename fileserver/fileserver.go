@@ -152,6 +152,7 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	fmt.Fprintf(w, "Received request %d files\n", len(entries))
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
