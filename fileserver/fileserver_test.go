@@ -72,9 +72,15 @@ func TestHandleGet(t *testing.T) {
 		s.handleGet(rec, req)
 
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Contains(t, rec.Body.String(), "/usr/bin/python")
-		assert.Contains(t, rec.Body.String(), "python")
-		assert.Contains(t, rec.Body.String(), "104 101 108 108 111")
+
+		var response KeyValue
+		err = json.Unmarshal(rec.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Equal(t, "/usr/bin/python", response.Key)
+		assert.Equal(t, "python", response.Name)
+		assert.Equal(t, []byte("hello world"), response.Value)
+		assert.Equal(t, "abc123def456", response.HashValue)
 	})
 }
 

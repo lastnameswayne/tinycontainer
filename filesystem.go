@@ -46,7 +46,7 @@ type FS struct {
 type KeyValue struct {
 	Key       string `json:"key"`
 	Value     []byte `json:"value"` // Base64 encoded binary data
-	HashValue string `json:"value"`
+	HashValue string `json:"hash_value"`
 	Parent    string `json:"parent"`
 	Name      string `json:"name"`
 	IsDir     bool   `json:"is_dir"`

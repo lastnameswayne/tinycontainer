@@ -33,9 +33,10 @@ import (
 const defaultDirName = "fileserverfiles"
 
 type server struct {
-	keydir  map[string]string
-	mutex   *sync.Mutex
-	dirName string
+	keydir           map[string]string
+	mutex            *sync.Mutex
+	dirName          string
+	knownDirectories map[string][]string //directory name to list of hashes. Each has is the child
 }
 
 func NewServer() server {
@@ -49,16 +50,16 @@ func NewServerWithDir(dirName string) server {
 	}
 
 	return server{
-		keydir:  map[string]string{},
-		mutex:   &sync.Mutex{},
-		dirName: dirName,
+		keydir:           map[string]string{},
+		mutex:            &sync.Mutex{},
+		dirName:          dirName,
+		knownDirectories: map[string][]string{},
 	}
 }
 
 func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("filepath")
 
-	fmt.Println("received get for file", key)
 	if key == "" {
 		http.Error(w, "filepath is required", http.StatusBadRequest)
 		return
@@ -66,6 +67,39 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+
+	isDirRequest := key[len(key)-1] == '/'
+	if isDirRequest {
+		dir := key[:len(key)-1] // Remove trailing slash
+		fmt.Println("received get for directory", dir)
+
+		hashes, ok := s.knownDirectories[dir]
+		if !ok {
+			http.Error(w, "Directory not found", http.StatusNotFound)
+			return
+		}
+
+		entries := []KeyValue{}
+		for _, hash := range hashes {
+			content, err := os.ReadFile(s.dirName + "/" + hash)
+			if err != nil {
+				continue
+			}
+			var entry KeyValue
+			if err := json.Unmarshal(content, &entry); err != nil {
+				continue
+			}
+			entry.HashValue = hash
+			entry.Value = nil // Clear Value to reduce response size
+			entries = append(entries, entry)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(entries)
+		return
+	}
+
+	fmt.Println("received get for file", key)
 	hash, ok := s.keydir[key]
 	fmt.Println("key", key, "hash", hash, "ok", ok)
 
@@ -97,8 +131,8 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
 	Key       string `json:"key"`
-	Value     []byte `json:"value"` // Base64 encoded binary data
-	HashValue string `json:"value"`
+	Value     []byte `json:"value"`      // Base64 encoded binary data
+	HashValue string `json:"hash_value"` // Content hash for caching
 	Parent    string `json:"parent"`
 	Name      string `json:"name"`
 	IsDir     bool   `json:"is_dir"`
@@ -127,6 +161,11 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	s.keydir[entry.Key] = encoded
 	fmt.Println("set key", entry.Key, "of size", len(entry.Value))
+
+	// Add to parent's directory listing
+	if entry.Parent != "" {
+		s.knownDirectories[entry.Parent] = append(s.knownDirectories[entry.Parent], encoded)
+	}
 
 	marshalledEntry, err := json.Marshal(entry)
 	if err != nil {
@@ -174,6 +213,12 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.keydir[entry.Key] = encoded
+
+		// Add to parent's directory listing
+		if entry.Parent != "" {
+			s.knownDirectories[entry.Parent] = append(s.knownDirectories[entry.Parent], encoded)
+		}
+
 		stored = stored + 1
 	}
 
