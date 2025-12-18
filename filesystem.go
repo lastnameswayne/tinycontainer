@@ -329,6 +329,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		fileExists := !errors.Is(err, os.ErrNotExist)
 		if fileExists {
 			path = "./" + hash
+			fmt.Print("FOUND FILE ON DISK", path)
 			return &d.fs.newFile(path, name, d).Inode, 0
 		}
 	}
@@ -345,6 +346,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	d.AddChild(name, df, false)
 	d.KeyDir[d.path+"/"+name] = hash
 	d.files[name] = file
+
+	if err := os.WriteFile("./"+hash, file.Data, 0644); err != nil {
+		fmt.Println("Error writing file to disk cache:", err)
+	}
+
 	return df, 0
 
 }

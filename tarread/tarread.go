@@ -108,7 +108,7 @@ func Export(tarfile string, url string) {
 		if len(file.Value) == 0 && !file.IsDir {
 			continue
 		}
-		if strings.Contains(file.Key, "ld-linux-x86-64") || strings.Contains(file.Key, "encodings/__init__") {
+		if strings.Contains(file.Key, "ld-linux-x86-64") || strings.Contains(file.Key, "encodings/__init__") || strings.Contains(file.Key, "app.py") {
 			fmt.Println("file", file.Key, len(file.Value), file.Size, file.Parent)
 		}
 
