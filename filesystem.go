@@ -226,6 +226,12 @@ func (r *FS) OnAdd(ctx context.Context) {
 	sysNode := r.NewPersistentInode(ctx, sysDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 	rf.AddChild("sys", sysNode, false)
 	rf.children["sys"] = sysDir
+
+	lib64Dir := r.newDir("lib64")
+	lib64Dir.parent = rf
+	lib64Node := r.NewPersistentInode(ctx, lib64Dir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	rf.AddChild("lib64", lib64Node, false)
+	rf.children["lib64"] = lib64Dir
 }
 
 // Open
