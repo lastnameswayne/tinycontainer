@@ -200,6 +200,9 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 	stored := 0
 	for _, entry := range entries {
 		h := sha1.New()
+		if entry.IsDir {
+			h.Write([]byte(entry.Key)) // Include key so directories get unique hashes
+		}
 		h.Write(entry.Value)
 		hash := h.Sum(nil)
 		encoded := hex.EncodeToString(hash)

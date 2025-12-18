@@ -105,7 +105,7 @@ func Export(tarfile string, url string) {
 
 	filteredResult := []KeyValue{}
 	for _, file := range result {
-		if len(file.Value) == 0 {
+		if len(file.Value) == 0 && !file.IsDir {
 			continue
 		}
 		if strings.Contains(file.Key, "ld-linux-x86-64") || strings.Contains(file.Key, "encodings/__init__") {

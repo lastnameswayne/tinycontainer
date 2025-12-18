@@ -344,7 +344,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 }
 
 func (d *Directory) isFile(name string) (bool, error) {
-	fmt.Println("Checking if", name, "is a file")
+	fmt.Println("Checking if", name, "is a file", d.path)
 	entry, err := d.getDataFromFileServer(name)
 	if err != nil {
 		fmt.Println("Error occurred while checking if", name, "is a file:", err)
@@ -393,9 +393,7 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	if path != "app" {
-		path = strings.TrimPrefix(path, "app")
-	}
+	path = strings.TrimPrefix(path, "app")
 	path = strings.TrimPrefix(path, "/")
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/"+name)
 	fmt.Println("CALLING URL WITH", requestUrl)
