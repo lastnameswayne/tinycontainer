@@ -346,25 +346,13 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 func (d *Directory) isFile(name string) (bool, error) {
 	fmt.Println("Checking if", name, "is a file", d.path)
 	fileEntry, fileErr := d.getDataFromFileServer(name)
-	dirEntry, dirErr := d.getDirectoryContentsFromFileServer()
 
 	if fileErr != nil {
 		fmt.Printf("Error fetching file data for %s: %v\n", name, fileErr)
-		return false, fmt.Errorf("file error: %v; directory error: %v", fileErr, dirErr)
-	}
-
-	if dirErr != nil {
-		fmt.Printf("Error fetching directory contents for %s: %v\n", name, dirErr)
-		return false, fmt.Errorf("file error: %v; directory error: %v", fileErr, dirErr)
+		return false, fileErr
 	}
 
 	fmt.Printf("File entry for %s: %+v\n", name, fileEntry.Name)
-
-	if len(dirEntry) > 0 {
-		fmt.Println("Directory entry for ", dirEntry[0].IsDir, dirEntry[0].Name)
-		return false, nil
-	}
-
 	isFile := !fileEntry.IsDir
 	if isFile {
 		fmt.Println(name, "is a file")
@@ -374,7 +362,9 @@ func (d *Directory) isFile(name string) (bool, error) {
 
 func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 	path := d.path
-	path = strings.TrimPrefix(path, "app")
+	if path != "app" {
+		path = strings.TrimPrefix(path, "app")
+	}
 	path = strings.TrimPrefix(path, "/")
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/")
 	fmt.Println("CALLING URL WITH", requestUrl)
@@ -408,7 +398,9 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	path = strings.TrimPrefix(path, "app")
+	if path != "app" {
+		path = strings.TrimPrefix(path, "app")
+	}
 	path = strings.TrimPrefix(path, "/")
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/"+name)
 	fmt.Println("CALLING URL WITH", requestUrl)
