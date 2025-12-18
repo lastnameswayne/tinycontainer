@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -59,7 +58,14 @@ type KeyValue struct {
 
 var _ = (fs.NodeStatfser)((*FS)(nil))
 
+const cacheDir = "filecache"
+
 func NewFS(path string) *FS {
+	// Create cache directory
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		fmt.Println("Error creating cache directory:", err)
+	}
+
 	fs := &FS{
 		path:   path,
 		KeyDir: map[string]string{},
@@ -325,19 +331,25 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 	if ok {
 		fmt.Println("ok", ok, "hash", hash)
-		_, err := os.Stat("./" + hash)
-		fileExists := !errors.Is(err, os.ErrNotExist)
-		if fileExists {
-			path = "./" + hash
-			fmt.Print("FOUND FILE ON DISK", path)
-			return &d.fs.newFile(path, name, d).Inode, 0
+		cachedData, err := os.ReadFile(cacheDir + "/" + hash)
+		if err == nil {
+			var entry KeyValue
+			if json.Unmarshal(cachedData, &entry) == nil {
+				fmt.Println("FOUND FILE ON DISK", hash)
+				file := d.mapEntryToFile(entry)
+				df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
+				d.AddChild(name, df, false)
+				d.files[name] = file
+				return df, 0
+			}
 		}
 	}
 
-	file, hash, err := d.getFileFromFileServer(name)
+	entry, hash, err := d.getFileFromFileServer(name)
 	if err != nil {
 		return nil, 1
 	}
+	file := d.mapEntryToFile(*entry)
 	df := d.NewInode(
 		ctx, file,
 		fs.StableAttr{Ino: 0},
@@ -347,8 +359,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	d.KeyDir[d.path+"/"+name] = hash
 	d.files[name] = file
 
-	if err := os.WriteFile("./"+hash, file.Data, 0644); err != nil {
-		fmt.Println("Error writing file to disk cache:", err)
+	// Write full KeyValue JSON to disk for cache (includes metadata)
+	if cacheData, err := json.Marshal(entry); err == nil {
+		if err := os.WriteFile(cacheDir+"/"+hash, cacheData, 0644); err != nil {
+			fmt.Println("Error writing file to disk cache:", err)
+		}
 	}
 
 	return df, 0
@@ -444,20 +459,20 @@ func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	return entry, nil
 }
 
-func (d *Directory) getFileFromFileServer(name string) (*file, string, error) {
+func (d *Directory) getFileFromFileServer(name string) (*KeyValue, string, error) {
 	entry, err := d.getDataFromFileServer(name)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return d.mapEntryToFile(entry), entry.HashValue, nil
+	return &entry, entry.HashValue, nil
 }
 
 func (d *Directory) mapEntryToFile(entry KeyValue) *file {
 	file := &file{
 		Data: entry.Value,
 		rc:   d.rc,
-		path: "./" + entry.HashValue,
+		path: cacheDir + "/" + entry.HashValue,
 	}
 	file.attr.Mode = uint32(entry.Mode)
 	file.attr.Size = uint64(entry.Size)
