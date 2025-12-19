@@ -307,14 +307,16 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 //the worker executes the containers
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	fmt.Println("called lookup on dir", d.path, d.children)
 	if childDir, found := d.children[name]; found {
-		fmt.Println("Found child in map", name)
+		fmt.Println("Found child in map", name, d.children)
 		return &childDir.Inode, 0
 	}
 
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 
+	fmt.Println("looking in cache", d.KeyDir)
 	hash, ok := d.KeyDir[d.path+"/"+name]
 	if ok {
 		fmt.Println("ok", ok, "hash", hash)
