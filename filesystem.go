@@ -318,9 +318,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	fmt.Println("looking in cache", d.KeyDir)
 	hash, ok := d.KeyDir[d.path+"/"+name]
-	for key := range d.KeyDir {
-		fmt.Println(key)
-	}
 	if ok {
 		fmt.Println("ok", ok, "hash", hash)
 		cachedData, err := os.ReadFile(cacheDir + "/" + hash)
