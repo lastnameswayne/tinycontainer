@@ -315,7 +315,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 
-	fmt.Println("looking in cache", d.KeyDir)
 	hash, ok := d.KeyDir[d.path+"/"+name]
 	if ok {
 		fmt.Println("ok", ok, "hash", hash)
