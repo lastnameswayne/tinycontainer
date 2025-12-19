@@ -316,14 +316,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 
-	isFile, err := d.isFile(name)
-	if err != nil {
-		return nil, syscall.ENOENT
-	}
-	if !isFile {
-		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
-	}
-
 	fmt.Println("looking in cache", d.KeyDir)
 	hash, ok := d.KeyDir[d.path+"/"+name]
 	for key := range d.KeyDir {
@@ -343,6 +335,14 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				return df, 0
 			}
 		}
+	}
+
+	isFile, err := d.isFile(name)
+	if err != nil {
+		return nil, syscall.ENOENT
+	}
+	if !isFile {
+		return &d.fs.ensureDir(ctx, d, d.parent, path).Inode, 0
 	}
 
 	entry, hash, err := d.getFileFromFileServer(name)
