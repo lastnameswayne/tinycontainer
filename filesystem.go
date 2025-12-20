@@ -41,6 +41,9 @@ type FS struct {
 	KeyDir map[string]string
 }
 
+// We use this to cache directories we know are not on the fileserver to avoid attempting a re-fetch.
+const _NOT_FOUND = "NOT_FOUND"
+
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
 	Key       string `json:"key"`
@@ -328,6 +331,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	fmt.Println("looking in cache", d.KeyDir)
 	hash, ok := d.KeyDir[d.path+"/"+name]
 	if ok {
+		if hash == _NOT_FOUND {
+			return nil, syscall.ENOENT
+		}
 		fmt.Println("ok", ok, "hash", hash)
 		cachedData, err := os.ReadFile(cacheDir + "/" + hash)
 		if err == nil {
@@ -345,6 +351,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	isFile, err := d.isFile(name)
 	if err != nil {
+		if err == ErrNotFoundOnFileServer {
+			d.KeyDir[d.path+"/"+name] = _NOT_FOUND
+		}
 		return nil, syscall.ENOENT
 	}
 	if !isFile {
@@ -383,7 +392,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 func (d *Directory) isFile(name string) (bool, error) {
 	fmt.Println("Checking if", name, "is a file", d.path)
 	fileEntry, fileErr := d.getDataFromFileServer(name)
-
 	if fileErr != nil {
 		fmt.Printf("Error fetching file data for %s: %v\n", name, fileErr)
 		return false, fileErr
