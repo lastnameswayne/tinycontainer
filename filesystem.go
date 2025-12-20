@@ -241,6 +241,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	}
 
 	if d.dirFetched {
+		fmt.Println("FETCHING CACHED DIRECTORY")
 		out := []fuse.DirEntry{}
 		prefix := d.path + "/"
 		for key, hash := range d.KeyDir {
@@ -254,7 +255,8 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			if cachedData, err := os.ReadFile(cacheDir + "/" + hash); err == nil {
 				var entry KeyValue
 				if json.Unmarshal(cachedData, &entry) == nil {
-					entries[name] = fuse.DirEntry{Name: name, Mode: uint32(entry.Mode)}
+					fmt.Println("read from disk", name)
+					entries[name] = fuse.DirEntry{Name: name, Mode: fuse.S_IFDIR}
 				}
 			}
 		}
@@ -274,21 +276,22 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if _, ok := entries[entry.Name]; ok {
 			continue
 		}
-		if entry.IsDir {
-			continue
-		}
 
 		key := d.path + "/" + entry.Name
 		d.KeyDir[key] = entry.HashValue
-		cacheData, err := json.Marshal(entry)
-		if err != nil {
-			continue
-		}
-		err = os.WriteFile(cacheDir+"/"+entry.HashValue, cacheData, 0644)
-		if err != nil {
-			continue
+
+		if !entry.IsDir {
+			cacheData, err := json.Marshal(entry)
+			if err != nil {
+				continue
+			}
+			err = os.WriteFile(cacheDir+"/"+entry.HashValue, cacheData, 0644)
+			if err != nil {
+				continue
+			}
 		}
 
+		fmt.Println("fetched entry", entry.Name, entry.IsDir)
 		fuseEntry := fuse.DirEntry{
 			Name: entry.Name,
 			Mode: uint32(entry.Mode),
