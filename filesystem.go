@@ -125,10 +125,11 @@ type Directory struct {
 	KeyDir map[string]string // map from name --> hash
 	attr   fuse.Attr
 	//extra
-	path     string
-	fs       *FS
-	parent   *Directory
-	children map[string]*Directory // directory name to object
+	path       string
+	fs         *FS
+	parent     *Directory
+	children   map[string]*Directory // directory name to object
+	dirFetched bool                  // This is true if we have fetched
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -239,6 +240,31 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		entries[entry.Name] = entry
 	}
 
+	if d.dirFetched {
+		out := []fuse.DirEntry{}
+		prefix := d.path + "/"
+		for key, hash := range d.KeyDir {
+			if !strings.HasPrefix(key, prefix) {
+				continue
+			}
+			name := strings.TrimPrefix(key, prefix)
+			if strings.Contains(name, "/") || hash == _NOT_FOUND {
+				continue
+			}
+			if cachedData, err := os.ReadFile(cacheDir + "/" + hash); err == nil {
+				var entry KeyValue
+				if json.Unmarshal(cachedData, &entry) == nil {
+					entries[name] = fuse.DirEntry{Name: name, Mode: uint32(entry.Mode)}
+				}
+			}
+		}
+
+		for _, entry := range entries {
+			out = append(out, entry)
+		}
+		return &CustomDirStream{entries: out}, 0
+	}
+
 	fileEntries, err := d.getDirectoryContentsFromFileServer()
 	if err != nil {
 		return nil, 1
@@ -248,6 +274,18 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if _, ok := entries[entry.Name]; ok {
 			continue
 		}
+
+		key := d.path + "/" + entry.Name
+		d.KeyDir[key] = entry.HashValue
+		cacheData, err := json.Marshal(entry)
+		if err != nil {
+			continue
+		}
+		err = os.WriteFile(cacheDir+"/"+entry.HashValue, cacheData, 0644)
+		if err != nil {
+			continue
+		}
+
 		fuseEntry := fuse.DirEntry{
 			Name: entry.Name,
 			Mode: uint32(entry.Mode),
@@ -255,6 +293,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		}
 		entries[fuseEntry.Name] = fuseEntry
 	}
+	d.dirFetched = true
 
 	out := []fuse.DirEntry{}
 	for _, entry := range entries {
