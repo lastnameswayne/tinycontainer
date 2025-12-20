@@ -275,16 +275,16 @@ func (ds *CustomDirStream) Close() {}
 
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	entries := []fuse.DirEntry{}
+	// Doing this to deduplicate
+	entries := make(map[string]fuse.DirEntry, 0)
 
-	// For each child in d.children
 	for name, childDir := range d.children {
-		// childDir.Inode is a directory => Mode bit for directory
-		entries = append(entries, fuse.DirEntry{
+		entry := fuse.DirEntry{
 			Name: name,
 			Mode: fuse.S_IFDIR,
 			Ino:  childDir.StableAttr().Ino,
-		})
+		}
+		entries[entry.Name] = entry
 	}
 
 	fileEntries, err := d.getDirectoryContentsFromFileServer()
@@ -293,14 +293,22 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	}
 
 	for _, entry := range fileEntries {
-		entries = append(entries, fuse.DirEntry{
+		if _, ok := entries[entry.Name]; ok {
+			continue
+		}
+		fuseEntry := fuse.DirEntry{
 			Name: entry.Name,
 			Mode: uint32(entry.Mode),
 			Ino:  0,
-		})
+		}
+		entries[fuseEntry.Name] = fuseEntry
 	}
 
-	return &CustomDirStream{entries: entries}, 0
+	out := []fuse.DirEntry{}
+	for _, entry := range entries {
+		out = append(out, entry)
+	}
+	return &CustomDirStream{entries: out}, 0
 }
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
@@ -362,7 +370,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	d.KeyDir[d.path+"/"+name] = hash
 	d.files[name] = file
 
-	// Write full KeyValue JSON to disk for cache (includes metadata)
 	if cacheData, err := json.Marshal(entry); err == nil {
 		if err := os.WriteFile(cacheDir+"/"+hash, cacheData, 0644); err != nil {
 			fmt.Println("Error writing file to disk cache:", err)
