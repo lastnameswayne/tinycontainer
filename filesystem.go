@@ -294,7 +294,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			}
 		}
 
-		fmt.Println("fetched entry", entry.Name, entry.IsDir)
+		fmt.Println("fetched entry", entry.Name, entry.IsDir, entry.Mode)
 		fuseEntry := fuse.DirEntry{
 			Name: entry.Name,
 			Mode: uint32(entry.Mode),
