@@ -282,7 +282,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		key := d.path + "/" + entry.Name
 		d.KeyDir[key] = entry.HashValue
 
-		if !entry.IsDir {
+		if !entry.IsDir && len(entry.Value) > 0 {
 			cacheData, err := json.Marshal(entry)
 			if err != nil {
 				continue
