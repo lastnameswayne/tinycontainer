@@ -231,13 +231,12 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	// Doing this to deduplicate
 	entries := make(map[string]fuse.DirEntry, 0)
 
-	for name, childDir := range d.children {
-		entry := fuse.DirEntry{
+	for name := range d.children {
+		entries[name] = fuse.DirEntry{
 			Name: name,
 			Mode: fuse.S_IFDIR,
-			Ino:  childDir.StableAttr().Ino,
+			Ino:  0,
 		}
-		entries[entry.Name] = entry
 	}
 
 	if d.dirFetched {
@@ -256,7 +255,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 				var entry KeyValue
 				if json.Unmarshal(cachedData, &entry) == nil {
 					fmt.Println("read from disk", name)
-					entries[name] = fuse.DirEntry{Name: name, Mode: fuse.S_IFDIR}
+					entries[name] = fuse.DirEntry{Name: name, Mode: uint32(entry.Mode)}
 				}
 			}
 		}
@@ -308,6 +307,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	for _, entry := range entries {
 		out = append(out, entry)
 	}
+	fmt.Println("returning", out)
 	return &CustomDirStream{entries: out}, 0
 }
 
