@@ -276,7 +276,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 
 	// Skip Python temp files - they'll never exist on server
-	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") {
+	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") || name == "__pycache__" {
 		return nil, syscall.ENOENT
 	}
 
