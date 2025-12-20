@@ -275,6 +275,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return &childDir.Inode, 0
 	}
 
+	// Skip Python temp files - they'll never exist on server
+	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") {
+		return nil, syscall.ENOENT
+	}
+
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 
