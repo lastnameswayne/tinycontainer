@@ -23,7 +23,6 @@ func Test_DirectoryReadDir(t *testing.T) {
 			path:     "/test",
 			fs:       testFS,
 			children: map[string]*Directory{},
-			files:    map[string]*file{},
 		}
 
 		// Add a child directory
@@ -31,16 +30,8 @@ func Test_DirectoryReadDir(t *testing.T) {
 			path:     "/test/subdir",
 			fs:       testFS,
 			children: map[string]*Directory{},
-			files:    map[string]*file{},
 		}
 		parentDir.children["subdir"] = childDir
-
-		// Add a file
-		testFile := &file{
-			path: "/test/init.py",
-			Data: []byte("# test file"),
-		}
-		parentDir.files["__init__.py"] = testFile
 
 		// Call Readdir
 		ctx := context.Background()
@@ -75,7 +66,6 @@ func Test_DirectoryReadDir(t *testing.T) {
 			path:     "/empty",
 			fs:       testFS,
 			children: map[string]*Directory{},
-			files:    map[string]*file{},
 		}
 
 		ctx := context.Background()
@@ -95,17 +85,10 @@ func Test_DirectoryReadDir(t *testing.T) {
 			path:     "/encodings",
 			fs:       testFS,
 			children: map[string]*Directory{},
-			files:    map[string]*file{},
 		}
 
 		// Add multiple files like Python's encodings package
 		fileNames := []string{"__init__.py", "utf_8.py", "latin_1.py", "aliases.py"}
-		for _, name := range fileNames {
-			dir.files[name] = &file{
-				path: "/encodings/" + name,
-				Data: []byte("# " + name),
-			}
-		}
 
 		ctx := context.Background()
 		stream, errno := dir.Readdir(ctx)
@@ -123,23 +106,6 @@ func Test_DirectoryReadDir(t *testing.T) {
 }
 
 func Test_newDir(t *testing.T) {
-	t.Run("initializes files map", func(t *testing.T) {
-		testFS := &FS{
-			KeyDir: map[string]string{},
-		}
-
-		dir := testFS.newDir("/test")
-
-		// files map must be initialized, not nil
-		// otherwise d.files[name] = file will panic
-		assert.NotNil(t, dir.files, "files map should be initialized")
-
-		// Should be able to write without panic
-		assert.NotPanics(t, func() {
-			dir.files["test.py"] = &file{}
-		})
-	})
-
 	t.Run("initializes children map", func(t *testing.T) {
 		testFS := &FS{
 			KeyDir: map[string]string{},

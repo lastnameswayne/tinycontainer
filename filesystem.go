@@ -90,7 +90,6 @@ func (fs *FS) newDir(path string) *Directory {
 	now := uint64(n.UnixMilli())
 	fmt.Println("NEW DIR", path)
 	children := map[string]*Directory{}
-	files := map[string]*file{}
 	return &Directory{
 		attr: fuse.Attr{
 			Atime: now,
@@ -99,59 +98,10 @@ func (fs *FS) newDir(path string) *Directory {
 			Mode:  uint32(os.ModeDir),
 		},
 		children: children,
-		files:    files,
 		path:     path,
 		fs:       fs,
 		KeyDir:   make(map[string]string),
 	}
-}
-
-func (r *FS) ensureDir(ctx context.Context, current, parent *Directory, fullPath string) *Directory {
-	if parent != nil {
-		current = parent
-	}
-	parts := strings.Split(fullPath, "/")
-	for i, part := range parts {
-		if i == 0 {
-			continue
-		}
-		if current.children == nil {
-			current.children = make(map[string]*Directory)
-		}
-		if child, exists := current.children[part]; exists {
-			fmt.Println("child exists")
-			current = child
-		} else {
-			newDir := r.newDir(strings.Join(parts[:i+1], "/"))
-			newDir.parent = current
-			newNode := r.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-			current.AddChild(part, newNode, false)
-			current.children[part] = newDir
-			current = newDir
-		}
-	}
-
-	return current
-}
-
-func (fs *FS) newFile(path, name string, currentDir *Directory) *file {
-	n := time.Now()
-	now := uint64(n.UnixMilli())
-
-	file := &file{
-		attr: fuse.Attr{
-			Atime: now,
-			Mtime: now,
-			Ctime: now,
-			Mode:  uint32(0644),
-		},
-		path: path,
-		fs:   fs,
-	}
-
-	currentDir.files[name] = file
-
-	return file
 }
 
 func (f *FS) Root() (*Directory, error) {
@@ -179,7 +129,6 @@ type Directory struct {
 	fs       *FS
 	parent   *Directory
 	children map[string]*Directory // directory name to object
-	files    map[string]*file      // file name to object
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -320,6 +269,10 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path, d.children)
+	if child := d.GetChild(name); child != nil {
+		return child, 0
+	}
+
 	if childDir, found := d.children[name]; found {
 		fmt.Println("Found child in map", name, d.children)
 		return &childDir.Inode, 0
@@ -343,7 +296,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 				file := d.mapEntryToFile(entry)
 				df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
 				d.AddChild(name, df, false)
-				d.files[name] = file
 				return df, 0
 			}
 		}
@@ -359,7 +311,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	if !isFile {
 		newDir := d.fs.newDir(path)
 		newDir.parent = d
-		newNode := d.fs.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+		newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
 		d.AddChild(name, newNode, false)
 		d.children[name] = newDir
 		return newNode, 0
@@ -377,7 +329,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	d.AddChild(name, df, false)
 	d.KeyDir[d.path+"/"+name] = hash
-	d.files[name] = file
 
 	if cacheData, err := json.Marshal(entry); err == nil {
 		if err := os.WriteFile(cacheDir+"/"+hash, cacheData, 0644); err != nil {
