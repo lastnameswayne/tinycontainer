@@ -276,6 +276,9 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if _, ok := entries[entry.Name]; ok {
 			continue
 		}
+		if entry.Name == "__pycache__" {
+			continue
+		}
 
 		key := d.path + "/" + entry.Name
 		d.KeyDir[key] = entry.HashValue
