@@ -226,44 +226,57 @@ func (ds *CustomDirStream) Next() (fuse.DirEntry, syscall.Errno) {
 // Close releases resources related to this directory stream
 func (ds *CustomDirStream) Close() {}
 
+// WORKING READDIR
+// // Readdir lists the contents of the directory
+func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	// Doing this to deduplicate
+	entries := make(map[string]fuse.DirEntry, 0)
+
+	for name, childDir := range d.children {
+		entry := fuse.DirEntry{
+			Name: name,
+			Mode: fuse.S_IFDIR,
+			Ino:  childDir.StableAttr().Ino,
+		}
+		entries[entry.Name] = entry
+	}
+
+	fileEntries, err := d.getDirectoryContentsFromFileServer()
+	if err != nil {
+		return nil, 1
+	}
+
+	for _, entry := range fileEntries {
+		if _, ok := entries[entry.Name]; ok {
+			continue
+		}
+		fuseEntry := fuse.DirEntry{
+			Name: entry.Name,
+			Mode: uint32(entry.Mode),
+			Ino:  0,
+		}
+		entries[fuseEntry.Name] = fuseEntry
+	}
+
+	out := []fuse.DirEntry{}
+	for _, entry := range entries {
+		out = append(out, entry)
+	}
+	return &CustomDirStream{entries: out}, 0
+}
+
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	// Doing this to deduplicate
 	entries := make(map[string]fuse.DirEntry, 0)
 
-	for name := range d.children {
-		entries[name] = fuse.DirEntry{
+	for name, childDir := range d.children {
+		entry := fuse.DirEntry{
 			Name: name,
 			Mode: fuse.S_IFDIR,
-			Ino:  0,
+			Ino:  childDir.StableAttr().Ino,
 		}
-	}
-
-	if d.dirFetched {
-		fmt.Println("FETCHING CACHED DIRECTORY")
-		out := []fuse.DirEntry{}
-		prefix := d.path + "/"
-		for key, hash := range d.KeyDir {
-			if !strings.HasPrefix(key, prefix) {
-				continue
-			}
-			name := strings.TrimPrefix(key, prefix)
-			if strings.Contains(name, "/") || hash == _NOT_FOUND {
-				continue
-			}
-			if cachedData, err := os.ReadFile(cacheDir + "/" + hash); err == nil {
-				var entry KeyValue
-				if json.Unmarshal(cachedData, &entry) == nil {
-					fmt.Println("read from disk", name)
-					entries[name] = fuse.DirEntry{Name: name, Mode: uint32(entry.Mode)}
-				}
-			}
-		}
-
-		for _, entry := range entries {
-			out = append(out, entry)
-		}
-		return &CustomDirStream{entries: out}, 0
+		entries[entry.Name] = entry
 	}
 
 	fileEntries, err := d.getDirectoryContentsFromFileServer()
@@ -282,13 +295,15 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		key := d.path + "/" + entry.Name
 		d.KeyDir[key] = entry.HashValue
 
-		if !entry.IsDir && len(entry.Value) > 0 {
+		if !entry.IsDir {
 			cacheData, err := json.Marshal(entry)
 			if err != nil {
+				fmt.Println("Error marshalling cache data")
 				continue
 			}
 			err = os.WriteFile(cacheDir+"/"+entry.HashValue, cacheData, 0644)
 			if err != nil {
+				fmt.Println("Error writing file")
 				continue
 			}
 		}
