@@ -525,6 +525,16 @@ func main() {
 	if err != nil {
 		log.Default().Printf("Command umount execution failed: %v", err)
 	}
+	// expose /run endpoint
+	handler := http.NewServeMux()
+	handler.HandleFunc("/run", Run)
+	httpserver := &http.Server{
+		Addr:    "8444",
+		Handler: handler,
+	}
+	log.Println("Starting server on https://localhost:8443")
+	log.Fatal(httpserver.ListenAndServe())
+
 	//init root
 	opts.Debug = true
 	root := NewFS(flag.Arg(0))
