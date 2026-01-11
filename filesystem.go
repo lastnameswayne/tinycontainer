@@ -248,11 +248,36 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if _, ok := entries[entry.Name]; ok {
 			continue
 		}
+		if entry.IsDir {
+			newDir := d.fs.newDir(filepath.Join(d.path, entry.Name))
+			newDir.parent = d
+			newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+			d.AddChild(entry.Name, newNode, false)
+			d.children[entry.Name] = newDir
+		} else {
+			file := d.mapEntryToFile(entry)
+			df := d.NewInode(
+				ctx, file,
+				fs.StableAttr{Ino: 0},
+			)
+
+			d.AddChild(entry.Name, df, false)
+			d.KeyDir[d.path+"/"+entry.Name] = entry.HashValue
+
+			if cacheData, err := json.Marshal(entry); err == nil {
+				if err := os.WriteFile(cacheDir+"/"+entry.HashValue, cacheData, 0644); err != nil {
+					fmt.Println("Error writing file to disk cache:", err)
+				}
+			}
+
+		}
+
 		fuseEntry := fuse.DirEntry{
 			Name: entry.Name,
 			Mode: uint32(entry.Mode),
 			Ino:  0,
 		}
+
 		entries[fuseEntry.Name] = fuseEntry
 	}
 
@@ -268,10 +293,10 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 //the worker executes the containers
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	fmt.Println("called lookup on dir", d.path, d.children)
+	fmt.Println("called lookup on dir", d.path)
 
 	if childDir, found := d.children[name]; found {
-		fmt.Println("Found child in map", name, d.children)
+		fmt.Println("Found child in map", name)
 		return &childDir.Inode, 0
 	}
 
@@ -283,7 +308,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 
-	fmt.Println("looking in cache", d.KeyDir)
 	hash, ok := d.KeyDir[d.path+"/"+name]
 	if ok {
 		if hash == _NOT_FOUND {
