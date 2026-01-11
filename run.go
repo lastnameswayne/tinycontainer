@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
+
+	"github.com/lastnameswayne/tinycontainer/db"
 )
 
 type RunRequest struct {
@@ -213,10 +216,12 @@ func Run(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// run runc command
+	startTime := time.Now()
 	cmd := exec.Command("sudo", "runc", "run", "mycontainer")
 
 	// Capture stdout and stderr
 	stdout, err := cmd.Output()
+	duration := time.Since(startTime)
 	exitCode := 0
 	stderrStr := ""
 
@@ -227,6 +232,16 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		} else {
 			http.Error(w, "Failed to run container: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+	}
+
+	memoryHits, diskHits, serverFetches := GetAndResetLookupStats()
+
+	if db.DB != nil {
+		if err := db.LogRun(fileName, startTime, duration.Milliseconds(),
+			string(stdout), stderrStr, exitCode,
+			memoryHits, diskHits, serverFetches); err != nil {
+			fmt.Println("Error logging run to database:", err)
 		}
 	}
 

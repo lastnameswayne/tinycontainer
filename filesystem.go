@@ -26,6 +26,7 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/lastnameswayne/tinycontainer/db"
 	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
@@ -34,6 +35,14 @@ var LookupStats struct {
 	MemoryCacheHits atomic.Int64 // Found in children map
 	DiskCacheHits   atomic.Int64 // Found in disk cache via KeyDir
 	ServerFetches   atomic.Int64 // Had to fetch from fileserver
+}
+
+// GetAndResetLookupStats returns current stats and resets counters to 0
+func GetAndResetLookupStats() (memoryHits, diskHits, serverFetches int64) {
+	memoryHits = LookupStats.MemoryCacheHits.Swap(0)
+	diskHits = LookupStats.DiskCacheHits.Swap(0)
+	serverFetches = LookupStats.ServerFetches.Swap(0)
+	return
 }
 
 var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
@@ -550,6 +559,11 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
+	// Initialize database for run logging
+	if err := db.Init("runs.db"); err != nil {
+		log.Printf("Warning: failed to initialize database: %v", err)
+	}
+
 	tarread.Export("archive.tar", "https://46.101.149.241:8443")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
