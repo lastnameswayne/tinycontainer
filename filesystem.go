@@ -519,10 +519,10 @@ func main() {
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
 	}
-	oneMinute := time.Minute
+	oneSecond := time.Second
 	opts := &fs.Options{
-		EntryTimeout: &oneMinute,
-		AttrTimeout:  &oneMinute,
+		EntryTimeout: &oneSecond,
+		AttrTimeout:  &oneSecond,
 	}
 	cmd := exec.Command("umount", flag.Arg(0))
 	err := cmd.Run()

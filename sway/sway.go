@@ -109,7 +109,11 @@ func main() {
 				}
 				json.Unmarshal(bodybytes, &response)
 
-				fmt.Println(string(response.Stdout))
+				if response.Error != "" || response.ExitCode != 0 {
+					fmt.Println(response.ExitCode, response.Error)
+				} else {
+					fmt.Println(response.Stdout)
+				}
 
 				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
 				fmt.Printf("took %d ms", timeElapsed)
