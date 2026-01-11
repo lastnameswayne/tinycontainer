@@ -196,6 +196,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	fmt.Println("received run request", r.Body)
 
 	// read filename
 	fileName := req.FileName
