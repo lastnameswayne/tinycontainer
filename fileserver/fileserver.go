@@ -90,7 +90,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			entry.HashValue = hash
-			entry.Value = nil // Clear Value to reduce response size
+			entry.Value = content // Clear Value to reduce response size
 			entries = append(entries, entry)
 		}
 
