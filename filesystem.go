@@ -578,6 +578,7 @@ func main() {
 	// expose /run endpoint
 	handler := http.NewServeMux()
 	handler.HandleFunc("/run", Run)
+	handler.HandleFunc("/stats", Stats)
 	httpserver := &http.Server{
 		Addr:    ":8444",
 		Handler: handler,

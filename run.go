@@ -255,3 +255,14 @@ func Run(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+func Stats(w http.ResponseWriter, r *http.Request) {
+	runs, err := db.GetAllRuns()
+	if err != nil {
+		http.Error(w, "Failed to get runs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(runs)
+}
