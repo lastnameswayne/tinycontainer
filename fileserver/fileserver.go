@@ -90,7 +90,6 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			entry.HashValue = hash
-			entry.Value = content
 			entries = append(entries, entry)
 		}
 

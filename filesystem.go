@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -27,6 +28,13 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/lastnameswayne/tinycontainer/tarread"
 )
+
+// LookupStats tracks cache hit/miss statistics for Lookup operations
+var LookupStats struct {
+	MemoryCacheHits atomic.Int64 // Found in children map
+	DiskCacheHits   atomic.Int64 // Found in disk cache via KeyDir
+	ServerFetches   atomic.Int64 // Had to fetch from fileserver
+}
 
 var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
 
@@ -297,6 +305,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	if childDir, found := d.children[name]; found {
 		fmt.Println("Found child in map", name)
+		LookupStats.MemoryCacheHits.Add(1)
 		return &childDir.Inode, 0
 	}
 
@@ -319,6 +328,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			var entry KeyValue
 			if json.Unmarshal(cachedData, &entry) == nil {
 				fmt.Println("FOUND FILE ON DISK", hash)
+				LookupStats.DiskCacheHits.Add(1)
 				file := d.mapEntryToFile(entry)
 				df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
 				d.AddChild(name, df, false)
@@ -335,6 +345,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, syscall.ENOENT
 	}
 	if !isFile {
+		LookupStats.ServerFetches.Add(1)
 		newDir := d.fs.newDir(path)
 		newDir.parent = d
 		newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
@@ -347,6 +358,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	if err != nil {
 		return nil, 1
 	}
+	LookupStats.ServerFetches.Add(1)
 	file := d.mapEntryToFile(*entry)
 	df := d.NewInode(
 		ctx, file,
