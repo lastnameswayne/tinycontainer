@@ -25,7 +25,7 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		{
-			Name: "run",
+			Name: "export",
 			Action: func(ctx *cli.Context) error {
 				start := time.Now()
 				fmt.Println("building docker image and generating tar ball...")
@@ -54,6 +54,17 @@ func main() {
 
 				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
 				fmt.Printf("took %d ms", timeElapsed)
+				return nil
+			},
+		},
+		{
+			Name: "run",
+			Action: func(ctx *cli.Context) error {
+				start := time.Now()
+				// read
+				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
+				fmt.Printf("took %d ms", timeElapsed)
+
 				return nil
 			},
 		},

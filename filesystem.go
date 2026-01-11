@@ -529,7 +529,7 @@ func main() {
 	handler := http.NewServeMux()
 	handler.HandleFunc("/run", Run)
 	httpserver := &http.Server{
-		Addr:    "8444",
+		Addr:    ":8444",
 		Handler: handler,
 	}
 	log.Println("Starting server on https://localhost:8443")
