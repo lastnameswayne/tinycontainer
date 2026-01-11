@@ -532,8 +532,12 @@ func main() {
 		Addr:    ":8444",
 		Handler: handler,
 	}
-	log.Println("Starting server on https://localhost:8443")
-	log.Fatal(httpserver.ListenAndServe())
+	go func() {
+		log.Println("Starting HTTP server on :8444")
+		if err := httpserver.ListenAndServe(); err != nil {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
 
 	//init root
 	opts.Debug = true
