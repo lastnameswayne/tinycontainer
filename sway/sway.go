@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"time"
@@ -12,6 +16,17 @@ import (
 )
 
 var server = "https://localhost:8443"
+
+type RunResponse struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+	Error    string `json:"error,omitempty"`
+}
+
+type RunRequest struct {
+	FileName string
+}
 
 func main() {
 	app := &cli.App{
@@ -62,6 +77,40 @@ func main() {
 			Action: func(ctx *cli.Context) error {
 				start := time.Now()
 				// read
+
+				if ctx.Args().Len() < 1 {
+					return fmt.Errorf("no script given")
+				}
+				scriptName := ctx.Args().First()
+
+				body := RunRequest{
+					FileName: scriptName,
+				}
+				marshalled, err := json.Marshal(body)
+				if err != nil {
+					return err
+				}
+
+				request, err := http.NewRequest("POST", "http://167.71.54.99:8444/run", bytes.NewBuffer(marshalled))
+				if err != nil {
+					return err
+				}
+
+				response := RunResponse{}
+				resp, err := http.DefaultClient.Do(request)
+				if err != nil {
+					return err
+				}
+				defer resp.Body.Close()
+
+				bodybytes, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				json.Unmarshal(bodybytes, &response)
+
+				fmt.Println(string(response.Stdout))
+
 				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
 				fmt.Printf("took %d ms", timeElapsed)
 
