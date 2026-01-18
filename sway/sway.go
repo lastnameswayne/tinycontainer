@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"time"
 
 	"github.com/lastnameswayne/tinycontainer/tarread"
@@ -16,6 +17,9 @@ import (
 )
 
 var server = "https://localhost:8443"
+
+const _publicFileServer = "https://46.101.149.241:8443"
+const _appDir = "app"
 
 type RunResponse struct {
 	Stdout   string `json:"stdout"`
@@ -75,18 +79,47 @@ func main() {
 		{
 			Name: "run",
 			Action: func(ctx *cli.Context) error {
+				username := os.Getenv("SWAY_USERNAME")
+				if username == "" {
+					return fmt.Errorf("SWAY_USERNAME not set. Run:\n\n  export SWAY_USERNAME=yourname\n")
+				}
+
 				start := time.Now()
-				// read
 
 				if ctx.Args().Len() < 1 {
 					return fmt.Errorf("no script given")
 				}
-				scriptName := ctx.Args().First()
+				scriptPath := ctx.Args().First()
 
-				body := RunRequest{
-					FileName: scriptName,
+				//first: seed fileserver with script
+				stat, err := os.Stat(scriptPath)
+				if err != nil {
+					return fmt.Errorf("file not found %s", scriptPath)
 				}
-				marshalled, err := json.Marshal(body)
+				if stat.IsDir() {
+					return fmt.Errorf("this is a directory %s", scriptPath)
+
+				}
+				file, err := os.ReadFile(scriptPath)
+				if err != nil {
+					return fmt.Errorf("could not read file")
+				}
+				scriptName := path.Base(scriptPath)
+				withUsername := fmt.Sprintf("%s_%s", username, scriptName)
+				keyval := tarread.KeyValue{
+					Key:     fmt.Sprintf("%s/%s", _appDir, withUsername),
+					Value:   file,
+					Name:    withUsername,
+					Parent:  _appDir,
+					Size:    stat.Size(),
+					Mode:    int64(stat.Mode().Perm()),
+					ModTime: stat.ModTime().Unix(),
+				}
+				tarread.SendFileBatch([]tarread.KeyValue{keyval}, _publicFileServer)
+				runRequest := RunRequest{
+					FileName: withUsername,
+				}
+				marshalled, err := json.Marshal(runRequest)
 				if err != nil {
 					return err
 				}
@@ -110,6 +143,7 @@ func main() {
 				json.Unmarshal(bodybytes, &response)
 
 				if response.Error != "" || response.ExitCode != 0 {
+					fmt.Printf("Could not run script %s. Error:", scriptPath)
 					fmt.Println(response.ExitCode, response.Error)
 				} else {
 					fmt.Println(response.Stdout)

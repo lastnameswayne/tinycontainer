@@ -121,7 +121,7 @@ func Export(tarfile string, url string) {
 		end := min(i+batchSize, len(filteredResult))
 		batch := filteredResult[start:end]
 		fmt.Println("sending batch...", len(batch))
-		sendFileBatch(batch, url)
+		SendFileBatch(batch, url)
 	}
 }
 
@@ -382,7 +382,7 @@ type Manifest struct {
 	Layers   []string `json:"Layers"`
 }
 
-func sendFile(file KeyValue, url string) {
+func SendFile(file KeyValue, url string) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -408,7 +408,7 @@ func sendFile(file KeyValue, url string) {
 	defer resp.Body.Close()
 }
 
-func sendFileBatch(files []KeyValue, url string) {
+func SendFileBatch(files []KeyValue, url string) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
