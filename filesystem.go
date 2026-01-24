@@ -341,6 +341,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		)
 
 		d.AddChild(name, df, false)
+		return df, 0
 	}
 
 	hash, ok := d.KeyDir[d.path+"/"+name]
