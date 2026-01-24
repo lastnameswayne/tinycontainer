@@ -597,6 +597,7 @@ func main() {
 	handler := http.NewServeMux()
 	handler.HandleFunc("/run", Run)
 	handler.HandleFunc("/stats", Stats)
+	handler.Handle("/", http.FileServer(http.Dir("./web")))
 	httpserver := &http.Server{
 		Addr:    ":8444",
 		Handler: handler,
