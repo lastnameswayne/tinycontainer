@@ -73,11 +73,6 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		dir := key[:len(key)-1] // Remove trailing slash
 		fmt.Println("received get for directory", dir)
 
-		// DEBUG: Special case - if looking for "app", check "." instead
-		if dir == "app" {
-			dir = "."
-		}
-
 		hashes, ok := s.knownDirectories[dir]
 		if !ok {
 			http.Error(w, "Directory not found", http.StatusNotFound)
