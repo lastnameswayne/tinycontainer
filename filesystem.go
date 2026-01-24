@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -326,6 +327,22 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	path := filepath.Join(d.path, name)
 	fmt.Println("path is", path)
 
+	// We can't cache the user's runscript, as it might change! Needs to be fetched fresh.
+	if isScript(name) {
+		entry, _, err := d.getFileFromFileServer(name)
+		if err != nil {
+			return nil, 1
+		}
+		LookupStats.ServerFetches.Add(1)
+		file := d.mapEntryToFile(*entry)
+		df := d.NewInode(
+			ctx, file,
+			fs.StableAttr{Ino: 0},
+		)
+
+		d.AddChild(name, df, false)
+	}
+
 	hash, ok := d.KeyDir[d.path+"/"+name]
 	if ok {
 		if hash == _NOT_FOUND {
@@ -599,4 +616,23 @@ func main() {
 		log.Fatalf("Mount fail: %v\n", err)
 	}
 	server.Wait()
+}
+
+func isScript(filename string) bool {
+	// use heurestics to decide
+
+	if path.Ext(filename) != "py" {
+		return false
+	}
+
+	parts := strings.Split(filename, "_")
+	if len(parts) != 2 {
+		return false
+	}
+
+	app := parts[1]
+	if app != "app" {
+		return false
+	}
+	return true
 }

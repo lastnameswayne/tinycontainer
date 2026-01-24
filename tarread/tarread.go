@@ -122,8 +122,8 @@ func Export(tarfile string, url string) {
 		batch := filteredResult[start:end]
 		fmt.Println("sending batch...", len(batch))
 
-		// existsFileBatch(batch, url)
-		// SendFileBatch(batch, url)
+		existsFileBatch(batch, url)
+		SendFileBatch(batch, url)
 	}
 }
 
