@@ -620,8 +620,7 @@ func main() {
 
 func isScript(filename string) bool {
 	// use heurestics to decide
-
-	if path.Ext(filename) != "py" {
+	if path.Ext(filename) != ".py" {
 		return false
 	}
 
@@ -631,7 +630,7 @@ func isScript(filename string) bool {
 	}
 
 	app := parts[1]
-	if app != "app" {
+	if app != "app.py" {
 		return false
 	}
 	return true

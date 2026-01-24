@@ -128,3 +128,7 @@ func collectEntries(t *testing.T, stream fs.DirStream) []fuse.DirEntry {
 	}
 	return entries
 }
+
+func Test_isScript(t *testing.T) {
+	assert.True(t, isScript("swayne123457_app.py"))
+}
