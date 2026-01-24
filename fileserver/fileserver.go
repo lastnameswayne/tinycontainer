@@ -36,7 +36,7 @@ type server struct {
 	keydir           map[string]string // file name to hash
 	mutex            *sync.Mutex
 	dirName          string
-	knownDirectories map[string][]string //directory name to list of hashes. Each has is the child
+	knownDirectories map[string]map[string]struct{} //directory name to list of hashes. Each hash is the child.
 }
 
 func NewServer() server {
@@ -53,7 +53,7 @@ func NewServerWithDir(dirName string) server {
 		keydir:           map[string]string{},
 		mutex:            &sync.Mutex{},
 		dirName:          dirName,
-		knownDirectories: map[string][]string{},
+		knownDirectories: map[string]map[string]struct{}{},
 	}
 }
 
@@ -80,7 +80,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 
 		entries := []KeyValue{}
-		for _, hash := range hashes {
+		for hash, _ := range hashes {
 			content, err := os.ReadFile(s.dirName + "/" + hash)
 			if err != nil {
 				continue
@@ -163,7 +163,10 @@ func (s *server) handleSet(w http.ResponseWriter, r *http.Request) {
 
 	// Add to parent's directory listing
 	if entry.Parent != "" {
-		s.knownDirectories[entry.Parent] = append(s.knownDirectories[entry.Parent], encoded)
+		if _, ok := s.knownDirectories[entry.Parent]; !ok {
+			s.knownDirectories[entry.Parent] = map[string]struct{}{}
+		}
+		s.knownDirectories[entry.Parent][encoded] = struct{}{}
 	}
 
 	marshalledEntry, err := json.Marshal(entry)
@@ -219,7 +222,10 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 
 		// Add to parent's directory listing
 		if entry.Parent != "" {
-			s.knownDirectories[entry.Parent] = append(s.knownDirectories[entry.Parent], encoded)
+			if _, ok := s.knownDirectories[entry.Parent]; !ok {
+				s.knownDirectories[entry.Parent] = map[string]struct{}{}
+			}
+			s.knownDirectories[entry.Parent][encoded] = struct{}{}
 		}
 
 		stored = stored + 1
