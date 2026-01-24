@@ -33,7 +33,7 @@ import (
 const defaultDirName = "fileserverfiles"
 
 type server struct {
-	keydir           map[string]string
+	keydir           map[string]string // file name to hash
 	mutex            *sync.Mutex
 	dirName          string
 	knownDirectories map[string][]string //directory name to list of hashes. Each has is the child
@@ -187,7 +187,7 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 	var entries []KeyValue
 	err := json.NewDecoder(r.Body).Decode(&entries)
 	if err != nil {
-		fmt.Println("Invadlid JSON")
+		fmt.Println("Invalid JSON")
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -233,12 +233,49 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 	os.WriteFile("index.json", marshaledIndex, 0755)
 }
 
+type ExistsResponse struct {
+	KeyValues []KeyValue `json:"keyValues"`
+}
+
+func (s *server) handleExists(w http.ResponseWriter, r *http.Request) {
+	var entries []KeyValue
+	err := json.NewDecoder(r.Body).Decode(&entries)
+	if err != nil {
+		fmt.Println("Invalid JSON")
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Fprintf(w, "Received request %d files\n", len(entries))
+
+	// set of file names
+	exists := map[string]struct{}{}
+	for _, entry := range entries {
+		_, ok := s.keydir[entry.Key]
+		if !ok {
+			continue
+		}
+		exists[entry.Key] = struct{}{}
+	}
+
+	response := []KeyValue{}
+	for _, keyVal := range entries {
+		if _, ok := exists[keyVal.Key]; !ok {
+			continue
+		}
+		response = append(response, keyVal)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+	return
+}
+
 func main() {
 	mux := http.NewServeMux()
 	s := NewServer()
 	mux.HandleFunc("/upload", s.handleSet)
 	mux.HandleFunc("/fetch", s.handleGet)
 	mux.HandleFunc("/batch-upload", s.handleSetBatch)
+	mux.HandleFunc("/exists", s.handleExists)
 
 	server := &http.Server{
 		Addr:    ":8443",

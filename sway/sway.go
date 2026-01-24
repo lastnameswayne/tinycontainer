@@ -30,6 +30,7 @@ type RunResponse struct {
 
 type RunRequest struct {
 	FileName string
+	Username string
 }
 
 func main() {
@@ -91,7 +92,6 @@ func main() {
 				}
 				scriptPath := ctx.Args().First()
 
-				//first: seed fileserver with script
 				stat, err := os.Stat(scriptPath)
 				if err != nil {
 					return fmt.Errorf("file not found %s", scriptPath)
@@ -118,6 +118,7 @@ func main() {
 				tarread.SendFileBatch([]tarread.KeyValue{keyval}, _publicFileServer)
 				runRequest := RunRequest{
 					FileName: withUsername,
+					Username: username,
 				}
 				marshalled, err := json.Marshal(runRequest)
 				if err != nil {

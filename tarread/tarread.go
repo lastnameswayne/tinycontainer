@@ -121,7 +121,9 @@ func Export(tarfile string, url string) {
 		end := min(i+batchSize, len(filteredResult))
 		batch := filteredResult[start:end]
 		fmt.Println("sending batch...", len(batch))
-		SendFileBatch(batch, url)
+
+		// existsFileBatch(batch, url)
+		// SendFileBatch(batch, url)
 	}
 }
 
@@ -406,6 +408,38 @@ func SendFile(file KeyValue, url string) {
 
 	// Close the response body
 	defer resp.Body.Close()
+}
+
+func existsFileBatch(files []KeyValue, url string) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	batchFiles, err := json.Marshal(files)
+	if err != nil {
+		log.Fatalf("Error marshalling batch files: %v", err)
+	}
+
+	req, err := http.NewRequest("PUT", url+"/exists", bytes.NewReader(batchFiles))
+	if err != nil {
+		log.Fatalf("Error creating HTTP request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	fmt.Println("sending to", url+"/exists")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Error sending HTTP request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Println("response status:", resp.StatusCode, "body:", string(body))
 }
 
 func SendFileBatch(files []KeyValue, url string) {

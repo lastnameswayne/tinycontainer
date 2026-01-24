@@ -13,6 +13,7 @@ import (
 
 type RunRequest struct {
 	FileName string
+	Username string
 }
 
 var runcConfigTemplateStr = `{
@@ -237,10 +238,12 @@ func Run(w http.ResponseWriter, r *http.Request) {
 
 	memoryHits, diskHits, serverFetches := GetAndResetLookupStats()
 
+	username := req.Username
+
 	if db.DB != nil {
 		if err := db.LogRun(fileName, startTime, duration.Milliseconds(),
 			string(stdout), stderrStr, exitCode,
-			memoryHits, diskHits, serverFetches); err != nil {
+			memoryHits, diskHits, serverFetches, username); err != nil {
 			fmt.Println("Error logging run to database:", err)
 		}
 	}

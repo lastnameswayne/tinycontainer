@@ -28,6 +28,7 @@ func Init(path string) error {
 			memory_cache_hits INTEGER,
 			disk_cache_hits INTEGER,
 			server_fetches INTEGER
+			username TEXT,
 		)
 	`)
 	return err
@@ -35,12 +36,12 @@ func Init(path string) error {
 
 func LogRun(filename string, startedAt time.Time, durationMs int64,
 	stdout, stderr string, exitCode int,
-	memoryHits, diskHits, serverFetches int64) error {
+	memoryHits, diskHits, serverFetches int64, username string) error {
 
 	_, err := DB.Exec(`
-		INSERT INTO runs (filename, started_at, duration_ms, stdout, stderr, exit_code, memory_cache_hits, disk_cache_hits, server_fetches)
+		INSERT INTO runs (filename, started_at, duration_ms, stdout, stderr, exit_code, memory_cache_hits, disk_cache_hits, server_fetches, username)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, filename, startedAt, durationMs, stdout, stderr, exitCode, memoryHits, diskHits, serverFetches)
+	`, filename, startedAt, durationMs, stdout, stderr, exitCode, memoryHits, diskHits, serverFetches, username)
 	return err
 }
 
