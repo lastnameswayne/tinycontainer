@@ -54,13 +54,13 @@ function rowHTML(r) {
           <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
             ${esc(fmtDur(r.duration_ms))}
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from memory">
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" data-tooltip="Times fetched from memory">
             <span class="font-medium">${esc(r.memory_cache_hits)}</span> mem
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from disk">
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" data-tooltip="Times fetched from disk">
             <span class="font-medium">${esc(r.disk_cache_hits)}</span> disk
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from the fileserver">
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" data-tooltip="Times fetched from server">
             <span class="font-medium">${esc(r.server_fetches)}</span> server
           </span>
         </div>

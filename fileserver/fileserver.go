@@ -246,8 +246,10 @@ func (s *server) handleSetBatch(w http.ResponseWriter, r *http.Request) {
 	os.WriteFile("index.json", marshaledIndex, 0755)
 }
 
-type ExistsResponse struct {
-	KeyValues []KeyValue `json:"keyValues"`
+// SyncEntry is metadata sent by client for sync comparison
+type SyncEntry struct {
+	Key  string `json:"key"`
+	Hash string `json:"hash"` // client-computed content hash
 }
 
 // handleList returns directory entries WITHOUT file content (Value field)
@@ -305,36 +307,34 @@ func (s *server) handleList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(entries)
 }
 
-func (s *server) handleExists(w http.ResponseWriter, r *http.Request) {
-	var entries []KeyValue
+type SyncResponse struct {
+	NeedUpload []string `json:"need_upload"`
+}
+
+func (s *server) handleSync(w http.ResponseWriter, r *http.Request) {
+	var entries []SyncEntry
 	err := json.NewDecoder(r.Body).Decode(&entries)
 	if err != nil {
-		fmt.Println("Invalid JSON")
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	fmt.Fprintf(w, "Received request %d files\n", len(entries))
+	fmt.Printf("Sync: received %d file hashes\n", len(entries))
 
-	// set of file names
-	exists := map[string]struct{}{}
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	needUpload := []string{}
 	for _, entry := range entries {
-		_, ok := s.keydir[entry.Key]
-		if !ok {
-			continue
+		existingHash, exists := s.keydir[entry.Key]
+		if !exists || existingHash != entry.Hash {
+			needUpload = append(needUpload, entry.Key)
 		}
-		exists[entry.Key] = struct{}{}
 	}
 
-	response := []KeyValue{}
-	for _, keyVal := range entries {
-		if _, ok := exists[keyVal.Key]; !ok {
-			continue
-		}
-		response = append(response, keyVal)
-	}
+	fmt.Printf("Sync: %d files need upload\n", len(needUpload))
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
-	return
+	json.NewEncoder(w).Encode(SyncResponse{NeedUpload: needUpload})
 }
 
 func main() {
@@ -344,7 +344,7 @@ func main() {
 	mux.HandleFunc("/fetch", s.handleGet)
 	mux.HandleFunc("/list", s.handleList)
 	mux.HandleFunc("/batch-upload", s.handleSetBatch)
-	mux.HandleFunc("/exists", s.handleExists)
+	mux.HandleFunc("/sync", s.handleSync)
 
 	server := &http.Server{
 		Addr:    ":8443",

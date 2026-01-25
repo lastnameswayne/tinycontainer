@@ -3,7 +3,9 @@ package tarread
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha1"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +34,27 @@ type KeyValue struct {
 type Symlink struct {
 	Name     string // where the symlink EXISTS (the path of the symlink)
 	Linkname string // what the symlink POINTS TO (the target path)
+}
+
+// SyncEntry is metadata sent to server for sync comparison
+type SyncEntry struct {
+	Key  string `json:"key"`
+	Hash string `json:"hash"`
+}
+
+// SyncResponse contains keys that need uploading
+type SyncResponse struct {
+	NeedUpload []string `json:"need_upload"`
+}
+
+// computeHash computes SHA1 hash matching server's algorithm
+func computeHash(kv KeyValue) string {
+	h := sha1.New()
+	if kv.IsDir {
+		h.Write([]byte(kv.Key))
+	}
+	h.Write(kv.Value)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func Export(tarfile string, url string) {
@@ -126,11 +149,29 @@ func Export(tarfile string, url string) {
 		filteredResult = append(filteredResult, file)
 	}
 
+	// Sync with server to find which files need uploading
+	needUpload := SyncFiles(filteredResult, url)
+
+	if len(needUpload) == 0 {
+		fmt.Println("all files already up to date!")
+		return
+	}
+
+	// Filter to only files that need uploading
+	toUpload := make([]KeyValue, 0, len(needUpload))
+	for _, f := range filteredResult {
+		if _, ok := needUpload[f.Key]; ok {
+			toUpload = append(toUpload, f)
+		}
+	}
+
+	fmt.Printf("uploading %d files (skipping %d unchanged)\n", len(toUpload), len(filteredResult)-len(toUpload))
+
 	batchSize := 3000
-	for i := 0; i < len(filteredResult); i = i + batchSize {
+	for i := 0; i < len(toUpload); i = i + batchSize {
 		start := i
-		end := min(i+batchSize, len(filteredResult))
-		batch := filteredResult[start:end]
+		end := min(i+batchSize, len(toUpload))
+		batch := toUpload[start:end]
 		fmt.Println("sending batch...", len(batch))
 
 		SendFileBatch(batch, url)
@@ -420,7 +461,8 @@ func SendFile(file KeyValue, url string) {
 	defer resp.Body.Close()
 }
 
-func existsFileBatch(files []KeyValue, url string) {
+// SyncFiles sends file hashes to server and returns set of keys that need uploading
+func SyncFiles(files []KeyValue, url string) map[string]struct{} {
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -429,27 +471,46 @@ func existsFileBatch(files []KeyValue, url string) {
 		},
 	}
 
-	batchFiles, err := json.Marshal(files)
-	if err != nil {
-		log.Fatalf("Error marshalling batch files: %v", err)
+	// Build sync entries with hashes
+	entries := make([]SyncEntry, len(files))
+	for i, f := range files {
+		entries[i] = SyncEntry{
+			Key:  f.Key,
+			Hash: computeHash(f),
+		}
 	}
 
-	req, err := http.NewRequest("PUT", url+"/exists", bytes.NewReader(batchFiles))
+	data, err := json.Marshal(entries)
+	if err != nil {
+		log.Fatalf("Error marshalling sync entries: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url+"/sync", bytes.NewReader(data))
 	if err != nil {
 		log.Fatalf("Error creating HTTP request: %v", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
 
-	fmt.Println("sending to", url+"/exists")
+	fmt.Println("syncing", len(files), "files with server...")
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("Error sending HTTP request: %v", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Println("response status:", resp.StatusCode, "body:", string(body))
+	var syncResp SyncResponse
+	if err := json.NewDecoder(resp.Body).Decode(&syncResp); err != nil {
+		log.Fatalf("Error decoding sync response: %v", err)
+	}
+
+	// Convert to set for O(1) lookup
+	needUpload := make(map[string]struct{}, len(syncResp.NeedUpload))
+	for _, key := range syncResp.NeedUpload {
+		needUpload[key] = struct{}{}
+	}
+
+	fmt.Printf("server says %d files need upload\n", len(needUpload))
+	return needUpload
 }
 
 func SendFileBatch(files []KeyValue, url string) {
