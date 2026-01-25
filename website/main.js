@@ -20,18 +20,6 @@ const trunc = (s, n = 900) => {
 
 let rows = [];
 
-function activityScore(r) {
-    const mem = Number(r.memory_cache_hits ?? 0);
-    const disk = Number(r.disk_cache_hits ?? 0);
-    const fetch = Number(r.server_fetches ?? 0);
-
-    const memN = Math.log1p(mem) / Math.log1p(1500);
-    const diskN = Math.log1p(disk) / Math.log1p(1500);
-    const fetchN = Math.log1p(fetch) / Math.log1p(60);
-
-    return Math.max(0, Math.min(1, 0.55 * memN + 0.30 * diskN + 0.15 * fetchN));
-}
-
 function rowHTML(r) {
     const ok = Number(r.exit_code) === 0;
     const dot = ok ? "bg-emerald-500" : "bg-red-500";
