@@ -6,10 +6,17 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"time"
 
 	"github.com/lastnameswayne/tinycontainer/db"
 )
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
 
 type RunRequest struct {
 	FileName string
@@ -242,7 +249,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 
 	if db.DB != nil {
 		if err := db.LogRun(fileName, startTime, duration.Milliseconds(),
-			string(stdout), stderrStr, exitCode,
+			stripANSI(string(stdout)), stderrStr, exitCode,
 			memoryHits, diskHits, serverFetches, username); err != nil {
 			fmt.Println("Error logging run to database:", err)
 		}
