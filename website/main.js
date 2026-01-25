@@ -38,7 +38,7 @@ function rowHTML(r) {
           <div class="flex items-center gap-2">
             <span class="h-2.5 w-2.5 rounded-full ${dot}"></span>
             <div class="font-medium">${esc(username)}</div>
-            <span class="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 font-mono">py</span>
+            <span class="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 font-mono">.py</span>
             <div class="font-mono text-xs text-slate-500">#${esc(r.id)}</div>
           </div>
           <div class="mt-2 text-xs text-slate-500">
@@ -59,7 +59,7 @@ function rowHTML(r) {
           <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from disk">
             <span class="font-medium">${esc(r.disk_cache_hits)}</span> disk
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from the server">
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from the fileserver">
             <span class="font-medium">${esc(r.server_fetches)}</span> server
           </span>
         </div>

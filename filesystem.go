@@ -423,10 +423,6 @@ func (d *Directory) isFile(name string) (bool, error) {
 
 func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 	path := d.path
-	if path != "app" {
-		path = strings.TrimPrefix(path, "app")
-	}
-	path = strings.TrimPrefix(path, "/")
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/")
 	fmt.Println("CALLING URL WITH", requestUrl)
 
@@ -459,10 +455,6 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	if path != "app" {
-		path = strings.TrimPrefix(path, "app")
-	}
-	path = strings.TrimPrefix(path, "/")
 	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/"+name)
 	fmt.Println("CALLING URL WITH", requestUrl)
 

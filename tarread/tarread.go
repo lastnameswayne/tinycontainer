@@ -106,9 +106,21 @@ func Export(tarfile string, url string) {
 	filteredResult := []KeyValue{}
 	for _, file := range result {
 		if len(file.Value) == 0 && !file.IsDir {
+
 			continue
 		}
-		if strings.Contains(file.Key, "ld-linux-x86-64") || strings.Contains(file.Key, "encodings/__init__") || strings.Contains(file.Key, "app.py") {
+
+		// Prefix paths with "app/" if not already prefixed
+		if !strings.HasPrefix(file.Key, "app/") && file.Key != "app" {
+			file.Key = "app/" + file.Key
+			if file.Parent == "." {
+				file.Parent = "app"
+			} else {
+				file.Parent = "app/" + file.Parent
+			}
+		}
+
+		if strings.Contains(file.Key, "libstdc++") {
 			fmt.Println("file", file.Key, len(file.Value), file.Size, file.Parent)
 		}
 
@@ -122,7 +134,6 @@ func Export(tarfile string, url string) {
 		batch := filteredResult[start:end]
 		fmt.Println("sending batch...", len(batch))
 
-		existsFileBatch(batch, url)
 		SendFileBatch(batch, url)
 	}
 }
@@ -216,7 +227,7 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 				return nil, fmt.Errorf("copy file error: %v", err)
 			}
 			base := filepath.Base(header.Name)
-			if strings.Contains(base, "ld-linux-x86-64") {
+			if strings.Contains(base, "libstdc++") {
 				fmt.Println(base, header.Name)
 				stat, _ := outf.Stat()
 				size := stat.Size()
@@ -228,7 +239,7 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 			link := header.Linkname             // keep raw; resolve later with name context
 			base := filepath.Base(name)
 
-			if strings.Contains(base, "ld-linux-x86-64") {
+			if strings.Contains(base, "libstdc++") {
 				fmt.Println("SYMLINK:", name, "->", link, "header", header.Name)
 			}
 

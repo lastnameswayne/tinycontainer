@@ -68,10 +68,6 @@ func main() {
 
 				fmt.Println("starting worker...")
 
-				//could ssh into worker
-				//we need to run
-				// sudo runc run <container-id>
-
 				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
 				fmt.Printf("took %d ms", timeElapsed)
 				return nil
