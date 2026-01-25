@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -62,6 +63,12 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	if key == "" {
 		http.Error(w, "filepath is required", http.StatusBadRequest)
+		return
+	}
+
+	// Filter out non-essential files that cause slowdowns
+	if strings.HasSuffix(key, ".json") || strings.HasSuffix(key, ".txt") {
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 

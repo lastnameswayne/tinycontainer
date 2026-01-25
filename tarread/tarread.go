@@ -127,7 +127,7 @@ func Export(tarfile string, url string) {
 		filteredResult = append(filteredResult, file)
 	}
 
-	batchSize := 1000
+	batchSize := 3000
 	for i := 0; i < len(filteredResult); i = i + batchSize {
 		start := i
 		end := min(i+batchSize, len(filteredResult))

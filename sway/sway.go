@@ -69,7 +69,7 @@ func main() {
 				fmt.Println("starting worker...")
 
 				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
-				fmt.Printf("took %d ms", timeElapsed)
+				fmt.Printf("took %v s", float64(timeElapsed/1000))
 				return nil
 			},
 		},
