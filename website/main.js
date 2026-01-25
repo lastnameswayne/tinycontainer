@@ -1,4 +1,4 @@
-const ENDPOINT = "http://167.71.54.99:8444/stats";
+const ENDPOINT = "/stats";
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,19 +32,6 @@ function activityScore(r) {
     return Math.max(0, Math.min(1, 0.55 * memN + 0.30 * diskN + 0.15 * fetchN));
 }
 
-function sparkBars(score01) {
-    const n = 24;
-    let out = "";
-    for (let i = 0; i < n; i++) {
-        const t = i / (n - 1);
-        const h = Math.max(0, Math.min(1, score01 * 1.1 - t * 0.35));
-        const height = Math.max(2, 22 * h);
-        const cls = h <= 0.03 ? "bg-slate-200" : "bg-emerald-500";
-        out += `<span class="inline-block w-2 rounded-sm ${cls}" style="height:${height}px"></span>`;
-    }
-    return out;
-}
-
 function rowHTML(r) {
     const ok = Number(r.exit_code) === 0;
     const dot = ok ? "bg-emerald-500" : "bg-red-500";
@@ -54,8 +41,6 @@ function rowHTML(r) {
 
     const startedAbs = new Date(r.started_at).toLocaleString();
     const startedRel = rel(r.started_at);
-
-    const bars = sparkBars(activityScore(r));
 
     return `
     <div class="run-card rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50">
@@ -78,20 +63,15 @@ function rowHTML(r) {
           <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
             ${esc(fmtDur(r.duration_ms))}
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from memory">
             <span class="font-medium">${esc(r.memory_cache_hits)}</span> mem
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from disk">
             <span class="font-medium">${esc(r.disk_cache_hits)}</span> disk
           </span>
-          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
-            <span class="font-medium">${esc(r.server_fetches)}</span> fetch
+          <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs cursor-help" title="Amount of times the filesystem fetched a file or directory from the server">
+            <span class="font-medium">${esc(r.server_fetches)}</span> server
           </span>
-        </div>
-
-        <div class="flex flex-col items-end justify-between gap-2">
-          <div class="text-xs text-slate-500">run · ${esc(startedRel)}</div>
-          <div class="flex items-end gap-1">${bars}</div>
         </div>
 
         <details class="lg:col-span-3 border-t border-slate-100 pt-3">

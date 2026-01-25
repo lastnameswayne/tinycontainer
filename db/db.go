@@ -56,6 +56,7 @@ type RunRecord struct {
 	MemoryCacheHits int64     `json:"memory_cache_hits"`
 	DiskCacheHits   int64     `json:"disk_cache_hits"`
 	ServerFetches   int64     `json:"server_fetches"`
+	Username        string    `json:"username"`
 }
 
 func GetAllRuns() ([]RunRecord, error) {
