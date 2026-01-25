@@ -5,28 +5,3 @@ summary {
 summary::-webkit-details-marker {
     display: none;
 }
-
-/* Fast tooltips */
-[data-tooltip] {
-    position: relative;
-}
-[data-tooltip]::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #1e293b;
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    white-space: nowrap;
-    z-index: 10;
-    opacity: 0;
-    pointer-events: none;
-    margin-bottom: 4px;
-}
-[data-tooltip]:hover::after {
-    opacity: 1;
-}
