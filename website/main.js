@@ -29,6 +29,7 @@ function rowHTML(r) {
 
     const startedAbs = new Date(r.started_at).toLocaleString();
     const startedRel = rel(r.started_at);
+    const username = r.username || r.filename.split('_')[0];
 
     return `
     <div class="run-card rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50">
@@ -36,7 +37,8 @@ function rowHTML(r) {
         <div>
           <div class="flex items-center gap-2">
             <span class="h-2.5 w-2.5 rounded-full ${dot}"></span>
-            <div class="font-medium">${esc(r.filename)}</div>
+            <div class="font-medium">${esc(username)}</div>
+            <span class="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 font-mono">py</span>
             <div class="font-mono text-xs text-slate-500">#${esc(r.id)}</div>
           </div>
           <div class="mt-2 text-xs text-slate-500">
