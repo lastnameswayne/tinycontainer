@@ -1,25 +1,58 @@
-<div class="retro-sheet">
-    <div class="retro-title">
-        <span class="mark"></span>
-        JOB RUN LOG
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Runs</title>
+
+    <!-- Tailwind (no install) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { boxShadow: { soft: "0 10px 30px rgba(2,6,23,.06)" } } }
+        }
+    </script>
+
+    <!-- Day.js for relative times -->
+    <script src="https://unpkg.com/dayjs@1/dayjs.min.js"></script>
+    <script src="https://unpkg.com/dayjs@1/plugin/relativeTime.js"></script>
+    <script>dayjs.extend(dayjs_plugin_relativeTime)</script>
+
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body class="min-h-screen bg-slate-50 text-slate-900">
+    <div class="mx-auto max-w-6xl px-5 py-7">
+        <div class="flex items-end justify-between gap-3 flex-wrap">
+            <div>
+                <h1 class="text-xl font-semibold tracking-tight">Runs</h1>
+                <p class="text-sm text-slate-500">Latest executions</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <input id="q"
+                    class="w-72 max-w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                    placeholder="Search id / filename / exit…" />
+                <button id="refresh"
+                    class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50">
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="mt-4 rounded-2xl border border-slate-200 bg-white shadow-soft overflow-hidden">
+            <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
+                <div id="count">—</div>
+                <div id="status">Loading…</div>
+            </div>
+
+            <div id="list" class="p-3 space-y-2"></div>
+        </div>
+
     </div>
 
-    <table class="retro-table">
-        <thead>
-            <tr>
-                <th class="num">ID</th>
-                <th>Started</th>
-                <th>File</th>
-                <th class="num">ms</th>
-                <th class="num">exit</th>
-                <th class="num">mem</th>
-                <th class="num">disk</th>
-                <th class="num">fetch</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!-- rows -->
-        </tbody>
-    </table>
-</div>
-<script src="/main.js" defer></script>
+    <script src="./main.js"></script>
+</body>
+
+</html>
