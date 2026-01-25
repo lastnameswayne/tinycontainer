@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -423,7 +424,7 @@ func (d *Directory) isFile(name string) (bool, error) {
 
 func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 	path := d.path
-	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/")
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", url.QueryEscape(path+"/"))
 	fmt.Println("CALLING URL WITH", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
@@ -455,7 +456,7 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", path+"/"+name)
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", url.QueryEscape(path+"/"+name))
 	fmt.Println("CALLING URL WITH", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
