@@ -260,44 +260,40 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 	fileEntries, err := d.getDirectoryContentsFromFileServer()
 	if err != nil {
-		return nil, 1
-	}
-
-	for _, entry := range fileEntries {
-		if _, ok := entries[entry.Name]; ok {
-			continue
-		}
-		if entry.IsDir {
-			newDir := d.fs.newDir(filepath.Join(d.path, entry.Name))
-			newDir.parent = d
-			newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-			d.AddChild(entry.Name, newNode, false)
-			d.children[entry.Name] = newDir
-		} else {
-			file := d.mapEntryToFile(entry)
-			df := d.NewInode(
-				ctx, file,
-				fs.StableAttr{Ino: 0},
-			)
-
-			d.AddChild(entry.Name, df, false)
-			d.KeyDir[d.path+"/"+entry.Name] = entry.HashValue
-
-			if cacheData, err := json.Marshal(entry); err == nil {
-				if err := os.WriteFile(cacheDir+"/"+entry.HashValue, cacheData, 0644); err != nil {
-					fmt.Println("Error writing file to disk cache:", err)
+		fmt.Println("Error getting directory contents:", err)
+		// Return what we have from children map
+	} else {
+		for _, entry := range fileEntries {
+			if _, ok := entries[entry.Name]; ok {
+				continue
+			}
+			if entry.IsDir {
+				newDir := d.fs.newDir(filepath.Join(d.path, entry.Name))
+				newDir.parent = d
+				newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+				d.AddChild(entry.Name, newNode, false)
+				d.children[entry.Name] = newDir
+			} else {
+				// Create a lightweight file node
+				file := &file{
+					path: cacheDir + "/" + entry.HashValue,
+					attr: fuse.Attr{
+						Mode: uint32(entry.Mode),
+						Size: uint64(entry.Size),
+					},
 				}
+				df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
+				d.AddChild(entry.Name, df, false)
+				d.KeyDir[d.path+"/"+entry.Name] = entry.HashValue
 			}
 
+			fuseEntry := fuse.DirEntry{
+				Name: entry.Name,
+				Mode: uint32(entry.Mode),
+				Ino:  0,
+			}
+			entries[fuseEntry.Name] = fuseEntry
 		}
-
-		fuseEntry := fuse.DirEntry{
-			Name: entry.Name,
-			Mode: uint32(entry.Mode),
-			Ino:  0,
-		}
-
-		entries[fuseEntry.Name] = fuseEntry
 	}
 
 	out := []fuse.DirEntry{}
@@ -422,10 +418,20 @@ func (d *Directory) isFile(name string) (bool, error) {
 	return isFile, nil
 }
 
-func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
+// ListEntry is a lightweight entry for directory listings (no file content)
+type ListEntry struct {
+	Key       string `json:"key"`
+	HashValue string `json:"hash_value"`
+	Name      string `json:"name"`
+	IsDir     bool   `json:"is_dir"`
+	Size      int64  `json:"size"`
+	Mode      int64  `json:"mode"`
+}
+
+func (d *Directory) getDirectoryContentsFromFileServer() ([]ListEntry, error) {
 	path := d.path
-	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s", url.QueryEscape(path+"/"))
-	fmt.Println("CALLING URL WITH", requestUrl)
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/list?dir=%s", url.QueryEscape(path))
+	fmt.Println("CALLING LIST URL", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -446,7 +452,7 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]KeyValue, error) {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	var entries []KeyValue
+	var entries []ListEntry
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
 	}

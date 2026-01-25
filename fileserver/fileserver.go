@@ -243,6 +243,61 @@ type ExistsResponse struct {
 	KeyValues []KeyValue `json:"keyValues"`
 }
 
+// handleList returns directory entries WITHOUT file content (Value field)
+// This is much faster for directory listings since we skip the large payloads
+func (s *server) handleList(w http.ResponseWriter, r *http.Request) {
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		http.Error(w, "dir is required", http.StatusBadRequest)
+		return
+	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	fmt.Println("received list for directory", dir)
+
+	hashes, ok := s.knownDirectories[dir]
+	if !ok {
+		http.Error(w, "Directory not found", http.StatusNotFound)
+		return
+	}
+
+	// Lightweight entry without Value
+	type ListEntry struct {
+		Key       string `json:"key"`
+		HashValue string `json:"hash_value"`
+		Name      string `json:"name"`
+		IsDir     bool   `json:"is_dir"`
+		Size      int64  `json:"size"`
+		Mode      int64  `json:"mode"`
+	}
+
+	entries := make([]ListEntry, 0, len(hashes))
+	for hash := range hashes {
+		content, err := os.ReadFile(s.dirName + "/" + hash)
+		if err != nil {
+			continue
+		}
+		var entry KeyValue
+		if err := json.Unmarshal(content, &entry); err != nil {
+			continue
+		}
+		entries = append(entries, ListEntry{
+			Key:       entry.Key,
+			HashValue: hash,
+			Name:      entry.Name,
+			IsDir:     entry.IsDir,
+			Size:      entry.Size,
+			Mode:      entry.Mode,
+		})
+	}
+
+	fmt.Printf("returning %d entries for %s\n", len(entries), dir)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
 func (s *server) handleExists(w http.ResponseWriter, r *http.Request) {
 	var entries []KeyValue
 	err := json.NewDecoder(r.Body).Decode(&entries)
@@ -280,6 +335,7 @@ func main() {
 	s := NewServer()
 	mux.HandleFunc("/upload", s.handleSet)
 	mux.HandleFunc("/fetch", s.handleGet)
+	mux.HandleFunc("/list", s.handleList)
 	mux.HandleFunc("/batch-upload", s.handleSetBatch)
 	mux.HandleFunc("/exists", s.handleExists)
 
