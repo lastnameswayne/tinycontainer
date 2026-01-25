@@ -87,7 +87,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 
 		entries := []KeyValue{}
-		for hash, _ := range hashes {
+		for hash := range hashes {
 			content, err := os.ReadFile(s.dirName + "/" + hash)
 			if err != nil {
 				continue

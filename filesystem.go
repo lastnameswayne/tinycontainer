@@ -310,8 +310,6 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 var _ = (fs.NodeLookuper)((*Directory)(nil))
 
-//the worker executes the containers
-
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path)
 
