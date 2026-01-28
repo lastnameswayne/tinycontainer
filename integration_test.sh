@@ -5,7 +5,7 @@ cd ~/tinycontainerruntime
 
 # Config
 TIMEOUT=600
-export SWAY_USERNAME="integration_tester"
+export SWAY_USERNAME="integration-tester"
 
 # Colors
 RED='\033[0;31m'

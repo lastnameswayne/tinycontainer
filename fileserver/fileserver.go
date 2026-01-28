@@ -13,24 +13,6 @@ import (
 	"sync"
 )
 
-// file
-// open tar and content address all the files
-
-//this one gets called when runc wants to read a file and its not cached
-//on the local worker (the worker is in the cloud also)
-//so on startup we build an index
-//should laos be content addressed
-//build images using docker
-//docker save to get a tar file
-//then we can checksum every file ()
-//this one has an index of the same form as the worker
-
-// Upload depends on if the worker reads the dockerfile on startup and then sends everything
-// over here. Or if tje
-// Fetch is always needed
-
-// should expose endpoints for the methods below
-// explre nginx
 const defaultDirName = "fileserverfiles"
 
 type server struct {
