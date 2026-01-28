@@ -106,7 +106,6 @@ func Export(tarfile string, url string) {
 	filteredResult := []KeyValue{}
 	for _, file := range result {
 		if len(file.Value) == 0 && !file.IsDir {
-
 			continue
 		}
 

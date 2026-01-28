@@ -280,7 +280,6 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			d.AddChild(entry.Name, newNode, false)
 			d.children[entry.Name] = newDir
 		} else {
-			// Create a lightweight file node
 			file := &file{
 				path: cacheDir + "/" + entry.HashValue,
 				attr: fuse.Attr{
