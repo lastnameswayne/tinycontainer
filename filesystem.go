@@ -261,39 +261,44 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	fileEntries, err := d.getDirectoryContentsFromFileServer()
 	if err != nil {
 		fmt.Println("Error getting directory contents:", err)
-		// Return what we have from children map
-	} else {
-		for _, entry := range fileEntries {
-			if _, ok := entries[entry.Name]; ok {
-				continue
-			}
-			if entry.IsDir {
-				newDir := d.fs.newDir(filepath.Join(d.path, entry.Name))
-				newDir.parent = d
-				newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-				d.AddChild(entry.Name, newNode, false)
-				d.children[entry.Name] = newDir
-			} else {
-				// Create a lightweight file node
-				file := &file{
-					path: cacheDir + "/" + entry.HashValue,
-					attr: fuse.Attr{
-						Mode: uint32(entry.Mode),
-						Size: uint64(entry.Size),
-					},
-				}
-				df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
-				d.AddChild(entry.Name, df, false)
-				d.KeyDir[d.path+"/"+entry.Name] = entry.HashValue
-			}
-
-			fuseEntry := fuse.DirEntry{
-				Name: entry.Name,
-				Mode: uint32(entry.Mode),
-				Ino:  0,
-			}
-			entries[fuseEntry.Name] = fuseEntry
+		out := []fuse.DirEntry{}
+		for _, entry := range entries {
+			out = append(out, entry)
 		}
+		return &CustomDirStream{entries: out}, 0
+
+	}
+
+	for _, entry := range fileEntries {
+		if _, ok := entries[entry.Name]; ok {
+			continue
+		}
+		if entry.IsDir {
+			newDir := d.fs.newDir(filepath.Join(d.path, entry.Name))
+			newDir.parent = d
+			newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+			d.AddChild(entry.Name, newNode, false)
+			d.children[entry.Name] = newDir
+		} else {
+			// Create a lightweight file node
+			file := &file{
+				path: cacheDir + "/" + entry.HashValue,
+				attr: fuse.Attr{
+					Mode: uint32(entry.Mode),
+					Size: uint64(entry.Size),
+				},
+			}
+			df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
+			d.AddChild(entry.Name, df, false)
+			d.KeyDir[d.path+"/"+entry.Name] = entry.HashValue
+		}
+
+		fuseEntry := fuse.DirEntry{
+			Name: entry.Name,
+			Mode: uint32(entry.Mode),
+			Ino:  0,
+		}
+		entries[fuseEntry.Name] = fuseEntry
 	}
 
 	out := []fuse.DirEntry{}
