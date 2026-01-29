@@ -182,9 +182,7 @@ func (ds *CustomDirStream) Close() {}
 
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	// Doing this to deduplicate
 	entries := make(map[string]fuse.DirEntry, 0)
-
 	for name, childDir := range d.children {
 		entry := fuse.DirEntry{
 			Name: name,
@@ -194,7 +192,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		entries[entry.Name] = entry
 	}
 
-	fileEntries, err := d.getDirectoryContentsFromFileServer()
+	fileEntries, err := d.getContentsFromFileServer()
 	if err != nil {
 		fmt.Println("Error getting directory contents:", err)
 		out := []fuse.DirEntry{}
@@ -202,7 +200,6 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			out = append(out, entry)
 		}
 		return &CustomDirStream{entries: out}, 0
-
 	}
 
 	for _, entry := range fileEntries {
@@ -365,10 +362,10 @@ type ListEntry struct {
 	Mode      int64  `json:"mode"`
 }
 
-func (d *Directory) getDirectoryContentsFromFileServer() ([]ListEntry, error) {
-	path := d.path
-	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/list?dir=%s", url.QueryEscape(path))
-	fmt.Println("CALLING LIST URL", requestUrl)
+// getContentsFromFileServer only gets the filenames and metadata - not the actual binary value of the files in the directory.
+func (d *Directory) getContentsFromFileServer() ([]ListEntry, error) {
+	// Trailing slash indicates directory request
+	requestUrl := fmt.Sprintf("https://46.101.149.241:8443/fetch?filepath=%s/", url.QueryEscape(d.path))
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -389,12 +386,24 @@ func (d *Directory) getDirectoryContentsFromFileServer() ([]ListEntry, error) {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	var entries []ListEntry
+	var entries []KeyValue
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
 
-	return entries, nil
+	// Convert KeyValue to ListEntry
+	result := make([]ListEntry, len(entries))
+	for i, e := range entries {
+		result[i] = ListEntry{
+			Key:       e.Key,
+			HashValue: e.HashValue,
+			Name:      e.Name,
+			IsDir:     e.IsDir,
+			Size:      e.Size,
+			Mode:      e.Mode,
+		}
+	}
+	return result, nil
 }
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
