@@ -79,6 +79,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			entry.HashValue = hash
+			entry.Value = nil
 			entries = append(entries, entry)
 		}
 
@@ -254,7 +255,6 @@ func (s *server) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Lightweight entry without Value
 	type ListEntry struct {
 		Key       string `json:"key"`
 		HashValue string `json:"hash_value"`
@@ -333,9 +333,6 @@ func main() {
 		Handler: mux,
 	}
 
-	// Generate your own certificate and key or use Let's Encrypt in real-world applications
 	log.Println("Starting server on https://localhost:8443")
 	log.Fatal(server.ListenAndServeTLS("server.crt", "server.key"))
 }
-
-// goal: load a docker tar ball into a cache
