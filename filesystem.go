@@ -1,9 +1,3 @@
-// Copyright 2016 the Go-FUSE Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// This program is the analogon of libfuse's hello.c, a a program that
-// exposes a single file "file.txt" in the root directory.
 package main
 
 import (
@@ -29,7 +23,6 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/lastnameswayne/tinycontainer/db"
-	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
 // LookupStats tracks cache hit/miss statistics for Lookup operations
@@ -37,14 +30,6 @@ var LookupStats struct {
 	MemoryCacheHits atomic.Int64 // Found in children map
 	DiskCacheHits   atomic.Int64 // Found in disk cache via KeyDir
 	ServerFetches   atomic.Int64 // Had to fetch from fileserver
-}
-
-// GetAndResetLookupStats returns current stats and resets counters to 0
-func GetAndResetLookupStats() (memoryHits, diskHits, serverFetches int64) {
-	memoryHits = LookupStats.MemoryCacheHits.Swap(0)
-	diskHits = LookupStats.DiskCacheHits.Swap(0)
-	serverFetches = LookupStats.ServerFetches.Swap(0)
-	return
 }
 
 var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
@@ -80,11 +65,11 @@ type KeyValue struct {
 
 var _ = (fs.NodeStatfser)((*FS)(nil))
 
-const cacheDir = "filecache"
+const _cacheDir = "filecache"
 
 func NewFS(path string) *FS {
-	// Create cache directory
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	// Create local filecache directory
+	if err := os.MkdirAll(_cacheDir, 0755); err != nil {
 		fmt.Println("Error creating cache directory:", err)
 	}
 
@@ -119,7 +104,7 @@ func (fs *FS) newDir(path string) *Directory {
 		children: children,
 		path:     path,
 		fs:       fs,
-		KeyDir:   make(map[string]string),
+		keyDir:   make(map[string]string),
 	}
 }
 
@@ -128,7 +113,6 @@ func (f *FS) Root() (*Directory, error) {
 }
 
 func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
-	fmt.Println("CALLED STAT")
 	*out = fuse.StatfsOut{
 		Bsize:  512,
 		Blocks: 10,
@@ -140,14 +124,23 @@ func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 
 type Directory struct {
 	fs.Inode
-	rc     io.Reader
-	KeyDir map[string]string // map from name --> hash
-	attr   fuse.Attr
-	//extra
+	rc       io.Reader
+	keyDir   map[string]string // map from name --> hash
+	attr     fuse.Attr
 	path     string
 	fs       *FS
 	parent   *Directory
 	children map[string]*Directory // directory name to object
+}
+
+func (r *FS) initLinuxDirs(ctx context.Context, parent *Directory, names []string) {
+	for _, name := range names {
+		dir := r.newDir(name)
+		dir.parent = parent
+		node := r.NewPersistentInode(ctx, dir, fs.StableAttr{Mode: syscall.S_IFDIR})
+		parent.AddChild(name, node, false)
+		parent.children[name] = dir
+	}
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -155,69 +148,12 @@ func (r *FS) OnAdd(ctx context.Context) {
 	rf := r.newDir("app")
 	p.AddChild("app", r.NewPersistentInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 
-	// these are empty dirs in the linux filesystem
-	// They could also be served from the user / fileserver
-	homeDir := r.newDir("home")
-	homeDir.parent = rf
-	homeNode := r.NewPersistentInode(ctx, homeDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("home", homeNode, false)
-	rf.children["home"] = homeDir
-
-	libDir := r.newDir("lib")
-	libDir.parent = rf
-	libNode := r.NewPersistentInode(ctx, libDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("lib", libNode, false)
-	rf.children["lib"] = libDir
-
-	mediaDir := r.newDir("media")
-	mediaDir.parent = rf
-	mediaNode := r.NewPersistentInode(ctx, mediaDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("media", mediaNode, false)
-	rf.children["media"] = mediaDir
-
-	mntDir := r.newDir("mnt")
-	mntDir.parent = rf
-	mntNode := r.NewPersistentInode(ctx, mntDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("mnt", mntNode, false)
-	rf.children["mnt"] = mntDir
-
-	optDir := r.newDir("opt")
-	optDir.parent = rf
-	optNode := r.NewPersistentInode(ctx, optDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("opt", optNode, false)
-	rf.children["opt"] = optDir
-
-	procDir := r.newDir("proc")
-	procDir.parent = rf
-	procNode := r.NewPersistentInode(ctx, procDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("proc", procNode, false)
-	rf.children["proc"] = procDir
-
-	devDir := r.newDir("dev")
-	devDir.parent = rf
-	devNode := r.NewPersistentInode(ctx, devDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("dev", devNode, false)
-	rf.children["dev"] = devDir
-
-	sysDir := r.newDir("sys")
-	sysDir.parent = rf
-	sysNode := r.NewPersistentInode(ctx, sysDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("sys", sysNode, false)
-	rf.children["sys"] = sysDir
-
-	lib64Dir := r.newDir("lib64")
-	lib64Dir.parent = rf
-	lib64Node := r.NewPersistentInode(ctx, lib64Dir, fs.StableAttr{Mode: syscall.S_IFDIR})
-	rf.AddChild("lib64", lib64Node, false)
-	rf.children["lib64"] = lib64Dir
+	r.initLinuxDirs(ctx, rf, []string{
+		"home", "lib", "media", "mnt", "opt",
+		"proc", "dev", "sys", "lib64",
+	})
 }
 
-// Open
-// Read
-// Release
-// Readir
-// Readdirplus
-// Stat
 var _ = (fs.NodeReaddirer)((*Directory)(nil))
 
 // CustomDirStream is a custom implementation of the DirStream interface
@@ -281,7 +217,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			d.children[entry.Name] = newDir
 		} else {
 			file := &file{
-				path: cacheDir + "/" + entry.HashValue,
+				path: _cacheDir + "/" + entry.HashValue,
 				attr: fuse.Attr{
 					Mode: uint32(entry.Mode),
 					Size: uint64(entry.Size),
@@ -289,7 +225,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			}
 			df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
 			d.AddChild(entry.Name, df, false)
-			d.KeyDir[d.path+"/"+entry.Name] = entry.HashValue
+			d.keyDir[d.path+"/"+entry.Name] = entry.HashValue
 		}
 
 		fuseEntry := fuse.DirEntry{
@@ -343,13 +279,12 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return df, 0
 	}
 
-	hash, ok := d.KeyDir[d.path+"/"+name]
+	hash, ok := d.keyDir[d.path+"/"+name]
 	if ok {
 		if hash == _NOT_FOUND {
 			return nil, syscall.ENOENT
 		}
-		fmt.Println("ok", ok, "hash", hash)
-		cachedData, err := os.ReadFile(cacheDir + "/" + hash)
+		cachedData, err := os.ReadFile(_cacheDir + "/" + hash)
 		if err == nil {
 			var entry KeyValue
 			if json.Unmarshal(cachedData, &entry) == nil {
@@ -366,7 +301,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	isFile, err := d.isFile(name)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
-			d.KeyDir[d.path+"/"+name] = _NOT_FOUND
+			d.keyDir[d.path+"/"+name] = _NOT_FOUND
 		}
 		return nil, syscall.ENOENT
 	}
@@ -392,10 +327,10 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	)
 
 	d.AddChild(name, df, false)
-	d.KeyDir[d.path+"/"+name] = hash
+	d.keyDir[d.path+"/"+name] = hash
 
 	if cacheData, err := json.Marshal(entry); err == nil {
-		if err := os.WriteFile(cacheDir+"/"+hash, cacheData, 0644); err != nil {
+		if err := os.WriteFile(_cacheDir+"/"+hash, cacheData, 0644); err != nil {
 			fmt.Println("Error writing file to disk cache:", err)
 		}
 	}
@@ -507,7 +442,7 @@ func (d *Directory) mapEntryToFile(entry KeyValue) *file {
 	file := &file{
 		Data: entry.Value,
 		rc:   d.rc,
-		path: cacheDir + "/" + entry.HashValue,
+		path: _cacheDir + "/" + entry.HashValue,
 	}
 	file.attr.Mode = uint32(entry.Mode)
 	file.attr.Size = uint64(entry.Size)
@@ -578,12 +513,7 @@ var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
 func main() {
-	// Initialize database for run logging
-	if err := db.Init("runs.db"); err != nil {
-		log.Printf("Warning: failed to initialize database: %v", err)
-	}
 
-	tarread.Export("archive.tar", "https://46.101.149.241:8443")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
@@ -594,7 +524,13 @@ func main() {
 	if err != nil {
 		log.Default().Printf("Command umount execution failed: %v", err)
 	}
-	// expose /run endpoint
+
+	// Initialize database for run logging
+	if err := db.Init("runs.db"); err != nil {
+		log.Printf("Warning: failed to initialize database: %v", err)
+	}
+
+	// start up web server
 	handler := http.NewServeMux()
 	handler.HandleFunc("/run", Run)
 	handler.HandleFunc("/stats", Stats)

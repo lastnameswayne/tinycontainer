@@ -243,7 +243,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	memoryHits, diskHits, serverFetches := GetAndResetLookupStats()
+	memoryHits, diskHits, serverFetches := getAndResetLookupStats()
 
 	username := req.Username
 
@@ -275,4 +275,11 @@ func Stats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(runs)
+}
+
+func getAndResetLookupStats() (memoryHits, diskHits, serverFetches int64) {
+	memoryHits = LookupStats.MemoryCacheHits.Swap(0)
+	diskHits = LookupStats.DiskCacheHits.Swap(0)
+	serverFetches = LookupStats.ServerFetches.Swap(0)
+	return
 }
