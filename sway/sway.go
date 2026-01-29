@@ -1,18 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
-	"os/exec"
-	"path"
 	"time"
 
-	"github.com/lastnameswayne/tinycontainer/tarread"
+	"github.com/fatih/color"
 	"github.com/urfave/cli/v2"
 )
 
@@ -48,29 +42,14 @@ func main() {
 			Name: "export",
 			Action: func(ctx *cli.Context) error {
 				start := time.Now()
-				fmt.Println("building docker image and generating tar ball...")
-				buildCmd := exec.Command("docker", "buildx", "build", "--platform", "linux/amd64", "--tag", "hello-py", "--load", ".")
-				saveCmd := exec.Command("docker", "image", "save", "hello-py")
-				outputFile, err := os.Create("test.tar")
+				err := export()
 				if err != nil {
-					log.Fatal("error", err)
-				}
-				defer outputFile.Close()
-				saveCmd.Stdout = outputFile
-				if err := buildCmd.Run(); err != nil {
-					log.Fatal("build", err)
-				}
-				if err := saveCmd.Run(); err != nil {
-					log.Fatal(err)
-				}
-				fmt.Println("sending to fileserver")
-				tarread.Export("test.tar", "https://46.101.149.241:8443")
 
-				fmt.Println("starting worker...")
+				}
+				bold := color.New(color.Bold).SprintFunc()
 
-				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
-				os.Remove("test.tar")
-				fmt.Printf("took %v s", float64(timeElapsed/1000))
+				elapsed := time.Since(start)
+				fmt.Printf("\n%s Export completed in %s\n", bold("Done!"), elapsed.Round(time.Millisecond))
 				return nil
 			},
 		},
@@ -81,70 +60,15 @@ func main() {
 				if username == "" {
 					return fmt.Errorf("SWAY_USERNAME not set. Run:\n\n  export SWAY_USERNAME=yourname\n")
 				}
-
-				start := time.Now()
-
 				if ctx.Args().Len() < 1 {
 					return fmt.Errorf("no script given")
 				}
+
+				start := time.Now()
 				scriptPath := ctx.Args().First()
-
-				stat, err := os.Stat(scriptPath)
-				if err != nil {
-					return fmt.Errorf("file not found %s", scriptPath)
-				}
-				if stat.IsDir() {
-					return fmt.Errorf("this is a directory %s", scriptPath)
-
-				}
-				file, err := os.ReadFile(scriptPath)
-				if err != nil {
-					return fmt.Errorf("could not read file")
-				}
-				scriptName := path.Base(scriptPath)
-				withUsername := fmt.Sprintf("%s_%s", username, scriptName)
-				keyval := tarread.KeyValue{
-					Key:     fmt.Sprintf("%s/%s", _appDir, withUsername),
-					Value:   file,
-					Name:    withUsername,
-					Parent:  _appDir,
-					Size:    stat.Size(),
-					Mode:    int64(stat.Mode().Perm()),
-					ModTime: stat.ModTime().Unix(),
-				}
-				tarread.SendFileBatch([]tarread.KeyValue{keyval}, _publicFileServer)
-				runRequest := RunRequest{
-					FileName: withUsername,
-					Username: username,
-				}
-				marshalled, err := json.Marshal(runRequest)
+				err := run(scriptPath, username)
 				if err != nil {
 					return err
-				}
-
-				request, err := http.NewRequest("POST", "http://167.71.54.99:8444/run", bytes.NewBuffer(marshalled))
-				if err != nil {
-					return err
-				}
-
-				response := RunResponse{}
-				resp, err := http.DefaultClient.Do(request)
-				if err != nil {
-					return err
-				}
-				defer resp.Body.Close()
-
-				bodybytes, err := io.ReadAll(resp.Body)
-				if err != nil {
-					return err
-				}
-				json.Unmarshal(bodybytes, &response)
-
-				if response.Error != "" || response.ExitCode != 0 {
-					fmt.Printf("Could not run script %s. Error:", scriptPath)
-					fmt.Println(response.ExitCode, response.Error)
-				} else {
-					fmt.Println(response.Stdout)
 				}
 
 				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
