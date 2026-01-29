@@ -17,6 +17,21 @@ import (
 	"path/filepath"
 )
 
+// Verbose controls logging output
+var Verbose bool
+
+func logf(format string, args ...any) {
+	if Verbose {
+		fmt.Printf(format, args...)
+	}
+}
+
+func logln(args ...any) {
+	if Verbose {
+		fmt.Println(args...)
+	}
+}
+
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
 	Key     string `json:"key"`      // Full path
@@ -86,7 +101,7 @@ func Export(tarfile string, url string) {
 		panic("err")
 	}
 
-	fmt.Println(manifests[0].Layers)
+	logln(manifests[0].Layers)
 	rootfsDir := "/tmp/rootfs"
 	if err := os.MkdirAll(rootfsDir, 0755); err != nil {
 		log.Fatalf("Cannot create rootfsDir: %v", err)
@@ -99,7 +114,7 @@ func Export(tarfile string, url string) {
 			panic(err)
 		}
 
-		fmt.Println("layer", f.Name(), layer)
+		logln("layer", f.Name(), layer)
 		symlinks, err := readLayer(f, rootfsDir)
 		allSymlinks = append(allSymlinks, symlinks...)
 
@@ -143,7 +158,7 @@ func Export(tarfile string, url string) {
 		}
 
 		if strings.Contains(file.Key, "libstdc++") {
-			fmt.Println("file", file.Key, len(file.Value), file.Size, file.Parent)
+			logln("file", file.Key, len(file.Value), file.Size, file.Parent)
 		}
 
 		filteredResult = append(filteredResult, file)
@@ -153,7 +168,7 @@ func Export(tarfile string, url string) {
 	needUpload := SyncFiles(filteredResult, url)
 
 	if len(needUpload) == 0 {
-		fmt.Println("all files already up to date!")
+		logln("all files already up to date!")
 		return
 	}
 
@@ -165,14 +180,14 @@ func Export(tarfile string, url string) {
 		}
 	}
 
-	fmt.Printf("uploading %d files (skipping %d unchanged)\n", len(toUpload), len(filteredResult)-len(toUpload))
+	logf("uploading %d files (skipping %d unchanged)\n", len(toUpload), len(filteredResult)-len(toUpload))
 
 	batchSize := 3000
 	for i := 0; i < len(toUpload); i = i + batchSize {
 		start := i
 		end := min(i+batchSize, len(toUpload))
 		batch := toUpload[start:end]
-		fmt.Println("sending batch...", len(batch))
+		logln("sending batch...", len(batch))
 
 		SendFileBatch(batch, url)
 	}
@@ -190,7 +205,7 @@ func tarFileToEntries(path string) ([]KeyValue, error) {
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
-			fmt.Println("END OF FILE")
+			logln("END OF FILE")
 			break
 		}
 		if err != nil {
@@ -268,10 +283,10 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 			}
 			base := filepath.Base(header.Name)
 			if strings.Contains(base, "libstdc++") {
-				fmt.Println(base, header.Name)
+				logln(base, header.Name)
 				stat, _ := outf.Stat()
 				size := stat.Size()
-				fmt.Println(size)
+				logln(size)
 			}
 			outf.Close()
 		case tar.TypeSymlink, tar.TypeLink:
@@ -280,7 +295,7 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 			base := filepath.Base(name)
 
 			if strings.Contains(base, "libstdc++") {
-				fmt.Println("SYMLINK:", name, "->", link, "header", header.Name)
+				logln("SYMLINK:", name, "->", link, "header", header.Name)
 			}
 
 			symlinks = append(symlinks, Symlink{
@@ -361,12 +376,12 @@ func createSymlinkMapFromLayer(result []KeyValue, symlinks []Symlink) []KeyValue
 	for _, symlink := range symlinks {
 		for _, val := range result {
 			if strings.Contains(symlink.Linkname, "ld-linux-x86-64") && strings.Contains(val.Key, "ld-linux-x86-64") {
-				fmt.Println(symlink.Linkname, symlink.Name, val.Key)
+				logln(symlink.Linkname, symlink.Name, val.Key)
 			}
 			if symlink.Linkname != val.Key {
 				continue
 			}
-			fmt.Print("found", symlink.Name, len(val.Value))
+			logf("found %s %d", symlink.Name, len(val.Value))
 			keyValue := KeyValue{
 				Key:   symlink.Name,
 				Value: val.Value,
@@ -491,7 +506,7 @@ func SyncFiles(files []KeyValue, url string) map[string]struct{} {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	fmt.Println("syncing", len(files), "files with server...")
+	logln("syncing", len(files), "files with server...")
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("Error sending HTTP request: %v", err)
@@ -509,7 +524,7 @@ func SyncFiles(files []KeyValue, url string) map[string]struct{} {
 		needUpload[key] = struct{}{}
 	}
 
-	fmt.Printf("server says %d files need upload\n", len(needUpload))
+	logf("server says %d files need upload\n", len(needUpload))
 	return needUpload
 }
 
@@ -534,7 +549,7 @@ func SendFileBatch(files []KeyValue, url string) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	fmt.Println("sending to", url+"/batch-upload")
+	logln("sending to", url+"/batch-upload")
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatalf("Error sending HTTP request: %v", err)
@@ -542,5 +557,5 @@ func SendFileBatch(files []KeyValue, url string) {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Println("response status:", resp.StatusCode, "body:", string(body))
+	logln("response status:", resp.StatusCode, "body:", string(body))
 }

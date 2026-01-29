@@ -10,8 +10,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var server = "https://localhost:8443"
-
 const _publicFileServer = "https://46.101.149.241:8443"
 const _appDir = "app"
 
@@ -40,11 +38,18 @@ func main() {
 	app.Commands = []*cli.Command{
 		{
 			Name: "export",
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:    "verbose",
+					Aliases: []string{"v"},
+					Usage:   "enable verbose logging",
+				},
+			},
 			Action: func(ctx *cli.Context) error {
 				start := time.Now()
-				err := export()
+				err := export(ctx.Bool("verbose"))
 				if err != nil {
-
+					return err
 				}
 				bold := color.New(color.Bold).SprintFunc()
 

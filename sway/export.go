@@ -12,7 +12,8 @@ import (
 	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
-func export() error {
+func export(verbose bool) error {
+	tarread.Verbose = verbose
 	green := color.New(color.FgGreen).SprintFunc()
 
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
