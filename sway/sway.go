@@ -30,7 +30,10 @@ func main() {
 		Name:  "sway",
 		Usage: "run a container in the cloud",
 		Action: func(*cli.Context) error {
-			fmt.Println("hello world")
+			fmt.Println("sway - run containers in the cloud\n")
+			fmt.Println("Commands:")
+			fmt.Println("  export    Build and upload container image to fileserver")
+			fmt.Println("  run       Execute a script in the cloud container")
 			return nil
 		},
 	}
