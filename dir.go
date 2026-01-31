@@ -35,7 +35,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		for _, entry := range entries {
 			out = append(out, entry)
 		}
-		return &CustomDirStream{entries: out}, 0
+		return fs.NewListDirStream(out), 0
 	}
 
 	for _, entry := range fileEntries {
@@ -73,7 +73,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	for _, entry := range entries {
 		out = append(out, entry)
 	}
-	return &CustomDirStream{entries: out}, 0
+	return fs.NewListDirStream(out), 0
 }
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {

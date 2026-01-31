@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
-	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -84,26 +83,3 @@ type ListEntry struct {
 	Mode      int64  `json:"mode"`
 }
 
-// CustomDirStream is a custom implementation of the DirStream interface
-type CustomDirStream struct {
-	entries []fuse.DirEntry
-	index   int
-}
-
-// HasNext indicates if there are further entries
-func (ds *CustomDirStream) HasNext() bool {
-	return ds.index < len(ds.entries)
-}
-
-// Next retrieves the next entry
-func (ds *CustomDirStream) Next() (fuse.DirEntry, syscall.Errno) {
-	if !ds.HasNext() {
-		return fuse.DirEntry{}, syscall.ENOENT
-	}
-	entry := ds.entries[ds.index]
-	ds.index++
-	return entry, 0
-}
-
-// Close releases resources related to this directory stream
-func (ds *CustomDirStream) Close() {}

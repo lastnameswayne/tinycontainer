@@ -7,12 +7,11 @@ import (
 	"net/url"
 )
 
-const fileserverURL = "https://46.101.149.241:8443"
+const _fileserverURL = "https://46.101.149.241:8443"
 
 // getContentsFromFileServer only gets the filenames and metadata - not the actual binary value of the files in the directory.
 func (d *Directory) getContentsFromFileServer() ([]ListEntry, error) {
-	// Trailing slash indicates directory request
-	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", fileserverURL, url.QueryEscape(d.path))
+	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", _fileserverURL, url.QueryEscape(d.path))
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -55,7 +54,7 @@ func (d *Directory) getContentsFromFileServer() ([]ListEntry, error) {
 
 func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", fileserverURL, url.QueryEscape(path+"/"+name))
+	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", _fileserverURL, url.QueryEscape(path+"/"+name))
 	fmt.Println("CALLING URL WITH", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
