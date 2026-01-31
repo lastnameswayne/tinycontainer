@@ -43,7 +43,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 	fileEntries, err := d.getContentsFromFileServer()
 	if err != nil {
-		// fallback to what's in d.children
+		// Fallback to d.children.
 		fmt.Println("Error getting directory contents:", err)
 		out := []fuse.DirEntry{}
 		for _, entry := range entries {
