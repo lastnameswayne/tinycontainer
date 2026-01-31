@@ -57,11 +57,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			continue
 		}
 		if entry.IsDir {
-			newDir := d.fs.newDir(filepath.Join(d.path, entry.Name))
-			newDir.parent = d
-			newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-			d.AddChild(entry.Name, newNode, false)
-			d.children[entry.Name] = newDir
+			d.addDirChild(ctx, entry.Name)
 		} else {
 			f := &file{
 				path: _cacheDir + "/" + entry.HashValue,
@@ -139,12 +135,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 	if !isFile {
 		LookupStats.ServerFetches.Add(1)
-		newDir := d.fs.newDir(path)
-		newDir.parent = d
-		newNode := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
-		d.AddChild(name, newNode, false)
-		d.children[name] = newDir
-		return newNode, 0
+		return d.addDirChild(ctx, name), 0
 	}
 
 	entry, hash, err := d.getFileFromFileServer(name)
@@ -207,4 +198,13 @@ func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file
 		d.keyDir[d.path+"/"+name] = hash
 	}
 	return df
+}
+
+func (d *Directory) addDirChild(ctx context.Context, name string) *fs.Inode {
+	newDir := d.fs.newDir(filepath.Join(d.path, name))
+	newDir.parent = d
+	node := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	d.AddChild(name, node, false)
+	d.children[name] = newDir
+	return node
 }
