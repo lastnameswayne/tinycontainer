@@ -9,6 +9,8 @@ import (
 
 const _fileserverURL = "https://46.101.149.241:8443"
 
+var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
+
 // getContentsFromFileServer only gets the filenames and metadata - not the actual binary value of the files in the directory.
 func (d *Directory) getContentsFromFileServer() ([]ListEntry, error) {
 	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", _fileserverURL, url.QueryEscape(d.path))

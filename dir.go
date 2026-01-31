@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,18 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
+
+// Directory represents a directory in the filesystem
+type Directory struct {
+	fs.Inode
+	rc       io.Reader
+	keyDir   map[string]string // map from name --> hash
+	attr     fuse.Attr
+	path     string
+	fs       *FS
+	parent   *Directory
+	children map[string]*Directory // directory name to object
+}
 
 var _ = (fs.NodeReaddirer)((*Directory)(nil))
 var _ = (fs.NodeLookuper)((*Directory)(nil))
@@ -30,6 +43,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 	fileEntries, err := d.getContentsFromFileServer()
 	if err != nil {
+		// fallback to what's in d.children
 		fmt.Println("Error getting directory contents:", err)
 		out := []fuse.DirEntry{}
 		for _, entry := range entries {
@@ -49,16 +63,11 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			d.AddChild(entry.Name, newNode, false)
 			d.children[entry.Name] = newDir
 		} else {
-			file := &file{
+			f := &file{
 				path: _cacheDir + "/" + entry.HashValue,
-				attr: fuse.Attr{
-					Mode: uint32(entry.Mode),
-					Size: uint64(entry.Size),
-				},
+				attr: fuse.Attr{Mode: uint32(entry.Mode), Size: uint64(entry.Size)},
 			}
-			df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
-			d.AddChild(entry.Name, df, false)
-			d.keyDir[d.path+"/"+entry.Name] = entry.HashValue
+			d.addFileChild(ctx, entry.Name, entry.HashValue, f)
 		}
 
 		fuseEntry := fuse.DirEntry{
@@ -100,14 +109,8 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			return nil, 1
 		}
 		LookupStats.ServerFetches.Add(1)
-		file := d.mapEntryToFile(*entry)
-		df := d.NewInode(
-			ctx, file,
-			fs.StableAttr{Ino: 0},
-		)
-
-		d.AddChild(name, df, false)
-		return df, 0
+		f := d.mapEntryToFile(*entry)
+		return d.addFileChild(ctx, name, "", f), 0
 	}
 
 	hash, ok := d.keyDir[d.path+"/"+name]
@@ -121,10 +124,8 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			if json.Unmarshal(cachedData, &entry) == nil {
 				fmt.Println("FOUND FILE ON DISK", hash)
 				LookupStats.DiskCacheHits.Add(1)
-				file := d.mapEntryToFile(entry)
-				df := d.NewInode(ctx, file, fs.StableAttr{Ino: 0})
-				d.AddChild(name, df, false)
-				return df, 0
+				f := d.mapEntryToFile(entry)
+				return d.addFileChild(ctx, name, "", f), 0
 			}
 		}
 	}
@@ -151,14 +152,8 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, 1
 	}
 	LookupStats.ServerFetches.Add(1)
-	file := d.mapEntryToFile(*entry)
-	df := d.NewInode(
-		ctx, file,
-		fs.StableAttr{Ino: 0},
-	)
-
-	d.AddChild(name, df, false)
-	d.keyDir[d.path+"/"+name] = hash
+	f := d.mapEntryToFile(*entry)
+	df := d.addFileChild(ctx, name, hash, f)
 
 	if cacheData, err := json.Marshal(entry); err == nil {
 		if err := os.WriteFile(_cacheDir+"/"+hash, cacheData, 0644); err != nil {
@@ -203,4 +198,13 @@ func (d *Directory) mapEntryToFile(entry KeyValue) *file {
 	file.attr.Gid = uint32(entry.Gid)
 
 	return file
+}
+
+func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file) *fs.Inode {
+	df := d.NewInode(ctx, f, fs.StableAttr{Ino: 0})
+	d.AddChild(name, df, false)
+	if hash != "" {
+		d.keyDir[d.path+"/"+name] = hash
+	}
+	return df
 }

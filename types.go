@@ -1,14 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/hanwen/go-fuse/v2/fs"
-	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 // LookupStats tracks cache hit/miss statistics for Lookup operations
@@ -17,8 +13,6 @@ var LookupStats struct {
 	DiskCacheHits   atomic.Int64 // Found in disk cache via KeyDir
 	ServerFetches   atomic.Int64 // Had to fetch from fileserver
 }
-
-var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
 
 // We use this to cache directories we know are not on the fileserver to avoid attempting a re-fetch.
 const _NOT_FOUND = "NOT_FOUND"
@@ -33,29 +27,6 @@ type FS struct {
 	size   int64
 	client *http.Client
 	KeyDir map[string]string
-}
-
-// Directory represents a directory in the filesystem
-type Directory struct {
-	fs.Inode
-	rc       io.Reader
-	keyDir   map[string]string // map from name --> hash
-	attr     fuse.Attr
-	path     string
-	fs       *FS
-	parent   *Directory
-	children map[string]*Directory // directory name to object
-}
-
-// file represents a file in the filesystem
-type file struct {
-	fs.Inode
-	rc   io.Reader
-	Data []byte
-	attr fuse.Attr
-	mu   sync.Mutex
-	path string
-	fs   *FS
 }
 
 // KeyValue represents the JSON structure for set requests
@@ -82,4 +53,3 @@ type ListEntry struct {
 	Size      int64  `json:"size"`
 	Mode      int64  `json:"mode"`
 }
-
