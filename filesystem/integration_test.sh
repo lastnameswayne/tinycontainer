@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cd ~/tinycontainerruntime
+cd ~/tinycontainerruntime/testapps
 
 TIMEOUT=600
 export SWAY_USERNAME="integration-tester"
