@@ -25,16 +25,22 @@ type file struct {
 var _ = (fs.NodeReader)((*file)(nil))
 var _ = (fs.NodeOpener)((*file)(nil))
 
-func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	end := int(off) + len(dest)
+func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset int64) (fuse.ReadResult, syscall.Errno) {
+	if offset < 0 || int(offset) >= len(f.Data) {
+		return fuse.ReadResultData(nil), 0
+	}
+	end := int(offset) + len(dest)
 	end = min(end, len(f.Data))
-	return fuse.ReadResultData(f.Data[off:end]), 0
+	return fuse.ReadResultData(f.Data[offset:end]), 0
 }
 
-// TODO: stop hardcoding
 func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Mode = 0777
-	out.Nlink = 1
+	mode := f.attr.Mode
+	if mode == 0 {
+		mode = 0644
+	}
+	out.Mode = mode
+	out.Nlink = f.attr.Nlink
 	out.Size = f.attr.Size
 	const bs = 512
 	out.Blksize = bs
@@ -49,7 +55,7 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 
 	reader, err := os.Open(f.path)
 	if err != nil {
-		panic("cant open")
+		return nil, 0, syscall.EIO
 	}
 	content, err := io.ReadAll(reader)
 	if err != nil {

@@ -9,26 +9,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 // FS is the root filesystem
 type FS struct {
-	fs.Inode
+	fusefs.Inode
 
 	root   *Directory
-	nodeId uint64
 	path   string
-	size   int64
 	client *http.Client
-	KeyDir map[string]string
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
 	rf := r.newDir("app")
-	p.AddChild("app", r.NewPersistentInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+	p.AddChild("app", r.NewPersistentInode(ctx, rf, fusefs.StableAttr{Mode: syscall.S_IFDIR}), false)
 
 	r.initLinuxDirs(ctx, rf, []string{
 		"home", "lib", "media", "mnt", "opt",
@@ -40,15 +37,16 @@ func (r *FS) initLinuxDirs(ctx context.Context, parent *Directory, names []strin
 	for _, name := range names {
 		dir := r.newDir(name)
 		dir.parent = parent
-		node := r.NewPersistentInode(ctx, dir, fs.StableAttr{Mode: syscall.S_IFDIR})
+		node := r.NewPersistentInode(ctx, dir, fusefs.StableAttr{Mode: syscall.S_IFDIR})
 		parent.AddChild(name, node, false)
 		parent.children[name] = dir
 	}
 }
 
-var _ = (fs.NodeStatfser)((*FS)(nil))
+var _ = (fusefs.NodeStatfser)((*FS)(nil))
 
 const _cacheDir = "filecache"
+const _timeout = 5 * time.Minute
 
 func NewFS(path string) *FS {
 	// Create local filecache directory
@@ -57,15 +55,16 @@ func NewFS(path string) *FS {
 	}
 
 	fs := &FS{
-		path:   path,
-		KeyDir: map[string]string{},
+		path: path,
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
 			},
+			ResponseHeaderTimeout: _timeout,
 		},
+		Timeout: _timeout,
 	}
 	fs.client = client
 	fs.root = fs.newDir(path)
@@ -75,7 +74,6 @@ func NewFS(path string) *FS {
 func (fs *FS) newDir(path string) *Directory {
 	n := time.Now()
 	now := uint64(n.UnixMilli())
-	fmt.Println("NEW DIR", path)
 	children := map[string]*Directory{}
 	return &Directory{
 		attr: fuse.Attr{
@@ -96,11 +94,12 @@ func (f *FS) Root() (*Directory, error) {
 }
 
 func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	// Remote filesystems are effectively unbounded, so just returning a large, fixed value
 	*out = fuse.StatfsOut{
-		Bsize:  512,
-		Blocks: 10,
-		Bavail: 1000,
-		Bfree:  1000,
+		Bsize:  4076,
+		Blocks: 1 << 30,
+		Bavail: 1 << 30,
+		Bfree:  1 << 30,
 	}
 	return 0
 }

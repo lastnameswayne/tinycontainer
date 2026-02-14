@@ -31,7 +31,7 @@ var _ = (fs.NodeLookuper)((*Directory)(nil))
 
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
-	entries := make(map[string]fuse.DirEntry, 0)
+	entries := make(map[string]fuse.DirEntry)
 	for name, childDir := range d.children {
 		entry := fuse.DirEntry{
 			Name: name,
@@ -102,7 +102,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	if isScript(name) {
 		entry, err := d.getEntryFromFileServer(name)
 		if err != nil {
-			return nil, 1
+			return nil, syscall.EIO
 		}
 		LookupStats.ServerFetches.Add(1)
 		f := d.mapEntryToFile(entry)
@@ -155,22 +155,6 @@ func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Attr
 	out.Mode = syscall.S_IFDIR | 0755
 	out.Nlink = 2
 	return 0
-}
-
-func (d *Directory) isFile(name string) (bool, error) {
-	fmt.Println("Checking if", name, "is a file", d.path)
-	fileEntry, fileErr := d.getEntryFromFileServer(name)
-	if fileErr != nil {
-		fmt.Printf("Error fetching file data for %s: %v\n", name, fileErr)
-		return false, fileErr
-	}
-
-	fmt.Printf("File entry for %s: %+v\n", name, fileEntry.Name)
-	isFile := !fileEntry.IsDir
-	if isFile {
-		fmt.Println(name, "is a file")
-	}
-	return isFile, nil
 }
 
 func (d *Directory) mapEntryToFile(entry KeyValue) *file {

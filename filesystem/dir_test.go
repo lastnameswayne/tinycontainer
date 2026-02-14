@@ -25,7 +25,6 @@ func Test_DirectoryReadDir(t *testing.T) {
 		defer func() { _fileserverURL = oldURL }()
 
 		testFS := &FS{
-			KeyDir: map[string]string{},
 			client: server.Client(),
 		}
 
@@ -55,9 +54,7 @@ func Test_DirectoryReadDir(t *testing.T) {
 	})
 
 	t.Run("empty directory returns empty stream", func(t *testing.T) {
-		testFS := &FS{
-			KeyDir: map[string]string{},
-		}
+		testFS := &FS{}
 
 		emptyDir := &Directory{
 			path:     "/empty",
@@ -74,9 +71,7 @@ func Test_DirectoryReadDir(t *testing.T) {
 	})
 
 	t.Run("multiple files are listed", func(t *testing.T) {
-		testFS := &FS{
-			KeyDir: map[string]string{},
-		}
+		testFS := &FS{}
 
 		dir := &Directory{
 			path:     "/encodings",

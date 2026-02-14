@@ -8,9 +8,7 @@ import (
 
 func Test_newDir(t *testing.T) {
 	t.Run("initializes children map", func(t *testing.T) {
-		testFS := &FS{
-			KeyDir: map[string]string{},
-		}
+		testFS := &FS{}
 
 		dir := testFS.newDir("/test")
 
