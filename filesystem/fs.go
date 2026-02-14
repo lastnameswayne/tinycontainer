@@ -96,7 +96,7 @@ func (f *FS) Root() (*Directory, error) {
 func (f *FS) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 	// Remote filesystems are effectively unbounded, so just returning a large, fixed value
 	*out = fuse.StatfsOut{
-		Bsize:  4076,
+		Bsize:  4096,
 		Blocks: 1 << 30,
 		Bavail: 1 << 30,
 		Bfree:  1 << 30,

@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-cd ~/tinycontainerruntime
+cd ~/tinycontainerruntime/testapps
 
 TIMEOUT=600
 export SWAY_USERNAME="integration-tester"
@@ -31,7 +31,7 @@ run_app() {
 
     log "Testing $dir..."
 
-    cd ~/tinycontainerruntime/"$dir"
+    cd ~/tinycontainerruntime/testapps/"$dir"
 
     if [ "$SKIP_EXPORT" = false ]; then
         log "  Running sway export..."

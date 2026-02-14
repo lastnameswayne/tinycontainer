@@ -57,6 +57,7 @@ func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	if err != nil {
 		return nil, 0, syscall.EIO
 	}
+	defer reader.Close()
 	content, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, 0, syscall.EIO
