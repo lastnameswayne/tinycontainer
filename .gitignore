@@ -1,4 +1,4 @@
 *.tar
-/testapp/*
-./testapp
-./filesystem/tinycontainer
+.DS_Store
+testapps/testapp/
+filesystem/tinycontainer
