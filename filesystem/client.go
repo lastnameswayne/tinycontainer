@@ -64,7 +64,7 @@ func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
 	return result, nil
 }
 
-func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
+func (d *Directory) getEntryFromFileServer(name string) (KeyValue, error) {
 	path := d.path
 	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", _fileserverURL, url.QueryEscape(path+"/"+name))
 	fmt.Println("CALLING URL WITH", requestUrl)
@@ -91,15 +91,6 @@ func (d *Directory) getDataFromFileServer(name string) (KeyValue, error) {
 	var entry KeyValue
 	if err := json.NewDecoder(resp.Body).Decode(&entry); err != nil {
 		return KeyValue{}, fmt.Errorf("error decoding response: %w", err)
-	}
-
-	return entry, nil
-}
-
-func (d *Directory) getFileFromFileServer(name string) (KeyValue, error) {
-	entry, err := d.getDataFromFileServer(name)
-	if err != nil {
-		return KeyValue{}, err
 	}
 
 	return entry, nil

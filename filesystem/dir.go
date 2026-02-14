@@ -100,7 +100,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	// We can't cache the user's runscript, as it might change! Needs to be fetched fresh.
 	if isScript(name) {
-		entry, err := d.getFileFromFileServer(name)
+		entry, err := d.getEntryFromFileServer(name)
 		if err != nil {
 			return nil, 1
 		}
@@ -125,7 +125,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			}
 		}
 	}
-	entry, err := d.getDataFromFileServer(name)
+	entry, err := d.getEntryFromFileServer(name)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
 			d.keyDir[d.path+"/"+name] = _NOT_FOUND
@@ -160,7 +160,7 @@ func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Attr
 
 func (d *Directory) isFile(name string) (bool, error) {
 	fmt.Println("Checking if", name, "is a file", d.path)
-	fileEntry, fileErr := d.getDataFromFileServer(name)
+	fileEntry, fileErr := d.getEntryFromFileServer(name)
 	if fileErr != nil {
 		fmt.Printf("Error fetching file data for %s: %v\n", name, fileErr)
 		return false, fileErr
