@@ -118,7 +118,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		if err == nil {
 			var entry KeyValue
 			if json.Unmarshal(cachedData, &entry) == nil {
-				fmt.Println("FOUND FILE ON DISK", hash)
 				LookupStats.DiskCacheHits.Add(1)
 				f := d.mapEntryToFile(entry)
 				return d.addFileChild(ctx, name, "", f), 0

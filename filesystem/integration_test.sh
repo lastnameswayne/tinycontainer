@@ -1,13 +1,21 @@
 #!/bin/bash
 set -e
 
+trap 'kill $(jobs -p) 2>/dev/null; exit 1' INT TERM
+
+SKIP_EXPORT=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-export) SKIP_EXPORT=true; shift ;;
+        *) shift ;;
+    esac
+done
+
 cd ~/tinycontainerruntime
 
-# Config
 TIMEOUT=600
 export SWAY_USERNAME="integration-tester"
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -25,9 +33,11 @@ run_app() {
 
     cd ~/tinycontainerruntime/"$dir"
 
-    log "  Running sway export..."
-    if ! timeout $TIMEOUT sway export > /dev/null 2>&1; then
-        fail "$dir: sway export failed"
+    if [ "$SKIP_EXPORT" = false ]; then
+        log "  Running sway export..."
+        if ! timeout $TIMEOUT sway export > /dev/null 2>&1; then
+            fail "$dir: sway export failed"
+        fi
     fi
 
     log "  Running sway run..."
