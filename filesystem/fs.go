@@ -13,6 +13,18 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
+// FS is the root filesystem
+type FS struct {
+	fs.Inode
+
+	root   *Directory
+	nodeId uint64
+	path   string
+	size   int64
+	client *http.Client
+	KeyDir map[string]string
+}
+
 func (r *FS) OnAdd(ctx context.Context) {
 	p := r.EmbeddedInode()
 	rf := r.newDir("app")

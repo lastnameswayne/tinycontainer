@@ -100,12 +100,12 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 
 	// We can't cache the user's runscript, as it might change! Needs to be fetched fresh.
 	if isScript(name) {
-		entry, _, err := d.getFileFromFileServer(name)
+		entry, err := d.getFileFromFileServer(name)
 		if err != nil {
 			return nil, 1
 		}
 		LookupStats.ServerFetches.Add(1)
-		f := d.mapEntryToFile(*entry)
+		f := d.mapEntryToFile(entry)
 		return d.addFileChild(ctx, name, "", f), 0
 	}
 
@@ -125,29 +125,25 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			}
 		}
 	}
-
-	isFile, err := d.isFile(name)
+	entry, err := d.getDataFromFileServer(name)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
 			d.keyDir[d.path+"/"+name] = _NOT_FOUND
 		}
+		fmt.Printf("Error fetching file data for %s: %v\n", name, err)
 		return nil, syscall.ENOENT
 	}
-	if !isFile {
+	if entry.IsDir {
 		LookupStats.ServerFetches.Add(1)
 		return d.addDirChild(ctx, name), 0
 	}
 
-	entry, hash, err := d.getFileFromFileServer(name)
-	if err != nil {
-		return nil, 1
-	}
 	LookupStats.ServerFetches.Add(1)
-	f := d.mapEntryToFile(*entry)
-	df := d.addFileChild(ctx, name, hash, f)
+	f := d.mapEntryToFile(entry)
+	df := d.addFileChild(ctx, name, entry.HashValue, f)
 
 	if cacheData, err := json.Marshal(entry); err == nil {
-		if err := os.WriteFile(_cacheDir+"/"+hash, cacheData, 0644); err != nil {
+		if err := os.WriteFile(_cacheDir+"/"+entry.HashValue, cacheData, 0644); err != nil {
 			fmt.Println("Error writing file to disk cache:", err)
 		}
 	}

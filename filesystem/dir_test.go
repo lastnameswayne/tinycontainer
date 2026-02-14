@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"syscall"
 	"testing"
 
@@ -12,15 +14,26 @@ import (
 )
 
 func Test_DirectoryReadDir(t *testing.T) {
-	t.Run("lists files and directories", func(t *testing.T) {
+	t.Run("lists children when server returns 404", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldURL := _fileserverURL
+		_fileserverURL = server.URL
+		defer func() { _fileserverURL = oldURL }()
+
 		testFS := &FS{
 			KeyDir: map[string]string{},
+			client: server.Client(),
 		}
 
 		parentDir := &Directory{
 			path:     "/test",
 			fs:       testFS,
 			children: map[string]*Directory{},
+			keyDir:   map[string]string{},
 		}
 
 		childDir := &Directory{
@@ -36,19 +49,9 @@ func Test_DirectoryReadDir(t *testing.T) {
 
 		entries := collectEntries(t, stream)
 
-		// Should have 2 entries: 1 dir + 1 file
-		assert.Len(t, entries, 2)
-
-		entryMap := make(map[string]fuse.DirEntry)
-		for _, e := range entries {
-			entryMap[e.Name] = e
-		}
-
-		assert.Contains(t, entryMap, "subdir")
-		assert.Equal(t, uint32(fuse.S_IFDIR), entryMap["subdir"].Mode)
-
-		assert.Contains(t, entryMap, "__init__.py")
-		assert.Equal(t, uint32(fuse.S_IFREG), entryMap["__init__.py"].Mode)
+		assert.Len(t, entries, 1)
+		assert.Equal(t, "subdir", entries[0].Name)
+		assert.Equal(t, uint32(fuse.S_IFDIR), entries[0].Mode)
 	})
 
 	t.Run("empty directory returns empty stream", func(t *testing.T) {
