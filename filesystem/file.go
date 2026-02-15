@@ -14,12 +14,10 @@ import (
 // file represents a file in the filesystem
 type file struct {
 	fs.Inode
-	rc   io.Reader
 	Data []byte
 	attr fuse.Attr
 	mu   sync.Mutex
 	path string
-	fs   *FS
 }
 
 var _ = (fs.NodeReader)((*file)(nil))

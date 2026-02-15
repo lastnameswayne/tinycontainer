@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 // Directory represents a directory in the filesystem
 type Directory struct {
 	fs.Inode
+	mu       sync.RWMutex
 	keyDir   map[string]cachedMetadata
 	attr     fuse.Attr
 	path     string
@@ -38,6 +40,7 @@ const _kernelInodeTimeout = 5 * time.Minute
 
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	d.mu.RLock()
 	entries := make(map[string]fuse.DirEntry)
 	for name, childDir := range d.children {
 		entry := fuse.DirEntry{
@@ -47,6 +50,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		}
 		entries[entry.Name] = entry
 	}
+	d.mu.RUnlock()
 
 	fileEntries, err := d.getContentsFromFileServer()
 	if err != nil {
@@ -59,9 +63,13 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		return fs.NewListDirStream(out), 0
 	}
 
+	d.mu.Lock()
 	for _, entry := range fileEntries {
 		if _, ok := entries[entry.Name]; ok {
 			continue
+		}
+		if _, exists := d.children[entry.Name]; exists {
+
 		}
 		if entry.IsDir {
 			d.addDirChild(ctx, entry.Name)
@@ -80,6 +88,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		}
 		entries[fuseEntry.Name] = fuseEntry
 	}
+	d.mu.Unlock()
 
 	out := []fuse.DirEntry{}
 	for _, entry := range entries {
@@ -131,9 +140,10 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
 			d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{notFound: true}
+			return nil, syscall.ENOENT
 		}
 		fmt.Printf("Error fetching file data for %s: %v\n", name, err)
-		return nil, syscall.ENOENT
+		return nil, syscall.EIO
 	}
 	if entry.IsDir {
 		LookupStats.ServerFetches.Add(1)
@@ -196,6 +206,9 @@ func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file
 }
 
 func (d *Directory) addDirChild(ctx context.Context, name string) *fs.Inode {
+	if dir, ok := d.children[name]; ok {
+		return &dir.Inode
+	}
 	newDir := d.fs.newDir(filepath.Join(d.path, name))
 	newDir.parent = d
 	node := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
