@@ -139,7 +139,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	f := mapEntryToFile(entry)
 	df := d.addFileChild(ctx, name, entry.HashValue, f)
 
-	if err := os.WriteFile(_cacheDir+"/"+entry.HashValue, entry.Value, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		fmt.Println("Error writing file to disk cache:", err)
 	}
 	return df, 0
