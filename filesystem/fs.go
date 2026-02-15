@@ -85,7 +85,7 @@ func (fs *FS) newDir(path string) *Directory {
 		children: children,
 		path:     path,
 		fs:       fs,
-		keyDir:   make(map[string]string),
+		keyDir:   make(map[string]cachedMetadata),
 	}
 }
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -18,12 +17,19 @@ import (
 type Directory struct {
 	fs.Inode
 	rc       io.Reader
-	keyDir   map[string]string // map from name --> hash
+	keyDir   map[string]cachedMetadata
 	attr     fuse.Attr
 	path     string
 	fs       *FS
 	parent   *Directory
 	children map[string]*Directory // directory name to object
+}
+
+type cachedMetadata struct {
+	hash     string
+	mode     int64
+	size     int64
+	notFound bool
 }
 
 var _ = (fs.NodeReaddirer)((*Directory)(nil))
@@ -60,7 +66,7 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			d.addDirChild(ctx, entry.Name)
 		} else {
 			f := &file{
-				path: _cacheDir + "/" + entry.HashValue,
+				path: filepath.Join(_cacheDir, entry.HashValue),
 				attr: fuse.Attr{Mode: uint32(entry.Mode), Size: uint64(entry.Size)},
 			}
 			d.addFileChild(ctx, entry.Name, entry.HashValue, f)
@@ -95,9 +101,6 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, syscall.ENOENT
 	}
 
-	path := filepath.Join(d.path, name)
-	fmt.Println("path is", path)
-
 	// We can't cache the user's runscript, as it might change! Needs to be fetched fresh.
 	if isScript(name) {
 		entry, err := d.getEntryFromFileServer(name)
@@ -109,25 +112,22 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return d.addFileChild(ctx, name, "", f), 0
 	}
 
-	hash, ok := d.keyDir[d.path+"/"+name]
+	metadata, ok := d.keyDir[filepath.Join(d.path, name)]
 	if ok {
-		if hash == _NOT_FOUND {
+		if metadata.notFound {
 			return nil, syscall.ENOENT
 		}
-		cachedData, err := os.ReadFile(_cacheDir + "/" + hash)
+		binaryData, err := os.ReadFile(filepath.Join(_cacheDir, metadata.hash))
 		if err == nil {
-			var entry KeyValue
-			if json.Unmarshal(cachedData, &entry) == nil {
-				LookupStats.DiskCacheHits.Add(1)
-				f := d.mapEntryToFile(entry)
-				return d.addFileChild(ctx, name, "", f), 0
-			}
+			LookupStats.DiskCacheHits.Add(1)
+			f := d.mapCachedEntryToFile(metadata, binaryData)
+			return d.addFileChild(ctx, name, "", f), 0
 		}
 	}
 	entry, err := d.getEntryFromFileServer(name)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
-			d.keyDir[d.path+"/"+name] = _NOT_FOUND
+			d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{notFound: true}
 		}
 		fmt.Printf("Error fetching file data for %s: %v\n", name, err)
 		return nil, syscall.ENOENT
@@ -141,12 +141,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	f := d.mapEntryToFile(entry)
 	df := d.addFileChild(ctx, name, entry.HashValue, f)
 
-	if cacheData, err := json.Marshal(entry); err == nil {
-		if err := os.WriteFile(_cacheDir+"/"+entry.HashValue, cacheData, 0644); err != nil {
-			fmt.Println("Error writing file to disk cache:", err)
-		}
+	if err := os.WriteFile(_cacheDir+"/"+entry.HashValue, entry.Value, 0644); err != nil {
+		fmt.Println("Error writing file to disk cache:", err)
 	}
-
 	return df, 0
 }
 
@@ -157,11 +154,23 @@ func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Attr
 	return 0
 }
 
+func (d *Directory) mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryData []byte) *file {
+	file := &file{
+		Data: binaryData,
+		rc:   d.rc,
+		path: filepath.Join(_cacheDir, cachedMetadata.hash),
+	}
+	file.attr.Mode = uint32(cachedMetadata.mode)
+	file.attr.Size = uint64(cachedMetadata.size)
+
+	return file
+}
+
 func (d *Directory) mapEntryToFile(entry KeyValue) *file {
 	file := &file{
 		Data: entry.Value,
 		rc:   d.rc,
-		path: _cacheDir + "/" + entry.HashValue,
+		path: filepath.Join(_cacheDir, entry.HashValue),
 	}
 	file.attr.Mode = uint32(entry.Mode)
 	file.attr.Size = uint64(entry.Size)
@@ -174,7 +183,11 @@ func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file
 	df := d.NewInode(ctx, f, fs.StableAttr{Ino: 0})
 	d.AddChild(name, df, false)
 	if hash != "" {
-		d.keyDir[d.path+"/"+name] = hash
+		d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{
+			hash: hash,
+			size: int64(f.attr.Size),
+			mode: int64(f.attr.Mode),
+		}
 	}
 	return df
 }

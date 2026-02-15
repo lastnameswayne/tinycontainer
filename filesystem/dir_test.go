@@ -32,7 +32,7 @@ func Test_DirectoryReadDir(t *testing.T) {
 			path:     "/test",
 			fs:       testFS,
 			children: map[string]*Directory{},
-			keyDir:   map[string]string{},
+			keyDir:   map[string]cachedMetadata{},
 		}
 
 		childDir := &Directory{
