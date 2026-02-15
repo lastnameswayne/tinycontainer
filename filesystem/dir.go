@@ -68,9 +68,6 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		if _, ok := entries[entry.Name]; ok {
 			continue
 		}
-		if _, exists := d.children[entry.Name]; exists {
-
-		}
 		if entry.IsDir {
 			d.addDirChild(ctx, entry.Name)
 		} else {
@@ -100,11 +97,14 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	fmt.Println("called lookup on dir", d.path)
 
+	d.mu.RLock()
 	if childDir, found := d.children[name]; found {
+		d.mu.RUnlock()
 		fmt.Println("Found child in map", name)
 		LookupStats.MemoryCacheHits.Add(1)
 		return &childDir.Inode, 0
 	}
+	d.mu.RUnlock()
 
 	// Skip Python temp files - they'll never exist on server
 	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") || name == "__pycache__" {
@@ -121,10 +121,14 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		f := mapEntryToFile(entry)
 		out.SetEntryTimeout(0)
 		out.SetAttrTimeout(0)
+		d.mu.Lock()
+		defer d.mu.Unlock()
 		return d.addFileChild(ctx, name, "", f), 0
 	}
 
+	d.mu.RLock()
 	metadata, ok := d.keyDir[filepath.Join(d.path, name)]
+	d.mu.RUnlock()
 	if ok {
 		if metadata.notFound {
 			return nil, syscall.ENOENT
@@ -133,26 +137,34 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		if err == nil {
 			LookupStats.DiskCacheHits.Add(1)
 			f := mapCachedEntryToFile(metadata, binaryData)
+			d.mu.Lock()
+			defer d.mu.Unlock()
 			return d.addFileChild(ctx, name, "", f), 0
 		}
 	}
 	entry, err := d.getEntryFromFileServer(name)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
+			d.mu.Lock()
 			d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{notFound: true}
+			d.mu.Unlock()
 			return nil, syscall.ENOENT
 		}
 		fmt.Printf("Error fetching file data for %s: %v\n", name, err)
 		return nil, syscall.EIO
 	}
+	LookupStats.ServerFetches.Add(1)
 	if entry.IsDir {
-		LookupStats.ServerFetches.Add(1)
+		d.mu.Lock()
+		defer d.mu.Unlock()
 		return d.addDirChild(ctx, name), 0
 	}
 
-	LookupStats.ServerFetches.Add(1)
 	f := mapEntryToFile(entry)
+
+	d.mu.Lock()
 	df := d.addFileChild(ctx, name, entry.HashValue, f)
+	d.mu.Unlock()
 
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		fmt.Println("Error writing file to disk cache:", err)

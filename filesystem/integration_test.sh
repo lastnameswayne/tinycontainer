@@ -27,7 +27,6 @@ fail() { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
 run_app() {
     local dir=$1
-    local expected=${2:-""}
 
     log "Testing $dir..."
 
@@ -43,30 +42,41 @@ run_app() {
     log "  Running sway run..."
     OUTPUT=$(timeout $TIMEOUT sway run app.py 2>&1) || true
 
-    echo "  Output: ${OUTPUT:0:100}..."
+    echo ""
+    echo "  Output: ${OUTPUT:0:200}"
 
     if echo "$OUTPUT" | grep -qi "error\|panic\|fatal"; then
         fail "$dir: Output contains errors"
     fi
 
-    if [ -n "$expected" ]; then
-        if echo "$OUTPUT" | grep -q "$expected"; then
-            pass "$dir: Found expected output '$expected'"
+    # Check each expected substring
+    for exp in "${@:2}"; do
+        if echo "$OUTPUT" | grep -q -- "$exp"; then
+            pass "$dir: Found expected output '$exp'"
         else
-            fail "$dir: Missing expected output '$expected'"
+            fail "$dir: Missing expected output '$exp'"
         fi
-    else
-        pass "$dir: Completed without errors"
-    fi
+    done
 
     cd ~/tinycontainerruntime
 }
 
 # Run tests
+START_TIME=$SECONDS
 log "Starting integration tests..."
 
-run_app "testapp3" "hello world" 
-# run_app "testappplotting"  # Uncomment when ready
+run_app "testapp2" "hello world" "Sum: 15" "Mean: 3.0"
+run_app "testapp3" "hello world" "Sum: 15" "Mean: 3.0" "-117.0" "0.0"
+run_app "testappscipy" "scipy test" "matmul: (100, 100)" "svd: u=(100, 100), s=(100,)" "fitted normal: mean="
+run_app "testappplotting" "Sine Wave"
+
+ELAPSED=$(( SECONDS - START_TIME ))
+MINS=$(( ELAPSED / 60 ))
+SECS=$(( ELAPSED % 60 ))
 
 echo ""
-echo -e "${GREEN}All integration tests passed!${NC}"
+if [ $MINS -gt 0 ]; then
+    echo -e "${GREEN}All integration tests passed in ${MINS}m ${SECS}s${NC}"
+else
+    echo -e "${GREEN}All integration tests passed in ${SECS}s${NC}"
+fi

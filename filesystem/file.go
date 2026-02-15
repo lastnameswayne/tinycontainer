@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"sync"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -16,7 +15,6 @@ type file struct {
 	fs.Inode
 	Data []byte
 	attr fuse.Attr
-	mu   sync.Mutex
 	path string
 }
 
@@ -38,7 +36,7 @@ func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 		mode = 0644
 	}
 	out.Mode = mode
-	out.Nlink = f.attr.Nlink
+	out.Nlink = 1 // Hardcoding to 1, assume no hard-links
 	out.Size = f.attr.Size
 	const bs = 512
 	out.Blksize = bs

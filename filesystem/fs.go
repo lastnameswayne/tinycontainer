@@ -72,7 +72,7 @@ func NewFS(path string) *FS {
 }
 
 func (fs *FS) newDir(path string) *Directory {
-	now := uint64(time.Now().Second())
+	now := uint64(time.Now().Unix())
 	children := map[string]*Directory{}
 	return &Directory{
 		attr: fuse.Attr{
