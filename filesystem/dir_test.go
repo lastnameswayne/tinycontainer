@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/hanwen/go-fuse/v2/fs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,14 +30,14 @@ func Test_DirectoryReadDir(t *testing.T) {
 
 		parentDir := &Directory{
 			path:     "/test",
-			fs:       testFS,
+			rootFS:   testFS,
 			children: map[string]*Directory{},
 			keyDir:   map[string]cachedMetadata{},
 		}
 
 		childDir := &Directory{
 			path:     "/test/subdir",
-			fs:       testFS,
+			rootFS:   testFS,
 			children: map[string]*Directory{},
 		}
 		parentDir.children["subdir"] = childDir
@@ -54,11 +54,20 @@ func Test_DirectoryReadDir(t *testing.T) {
 	})
 
 	t.Run("empty directory returns empty stream", func(t *testing.T) {
-		testFS := &FS{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldURL := _fileserverURL
+		_fileserverURL = server.URL
+		defer func() { _fileserverURL = oldURL }()
+
+		testFS := &FS{client: server.Client()}
 
 		emptyDir := &Directory{
 			path:     "/empty",
-			fs:       testFS,
+			rootFS:   testFS,
 			children: map[string]*Directory{},
 		}
 
@@ -71,33 +80,48 @@ func Test_DirectoryReadDir(t *testing.T) {
 	})
 
 	t.Run("multiple files are listed", func(t *testing.T) {
-		testFS := &FS{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldURL := _fileserverURL
+		_fileserverURL = server.URL
+		defer func() { _fileserverURL = oldURL }()
+
+		testFS := &FS{client: server.Client()}
 
 		dir := &Directory{
 			path:     "/encodings",
-			fs:       testFS,
+			rootFS:   testFS,
 			children: map[string]*Directory{},
 		}
 
-		// Add multiple files like Python's encodings package
-		fileNames := []string{"__init__.py", "utf_8.py", "latin_1.py", "aliases.py"}
+		// Server returns 404, so only local children are listed
+		child1 := &Directory{path: "/encodings/utf_8", rootFS: testFS, children: map[string]*Directory{}}
+		child2 := &Directory{path: "/encodings/latin_1", rootFS: testFS, children: map[string]*Directory{}}
+		dir.children["utf_8"] = child1
+		dir.children["latin_1"] = child2
 
 		ctx := context.Background()
 		stream, errno := dir.Readdir(ctx)
 		require.Equal(t, syscall.Errno(0), errno)
 
 		entries := collectEntries(t, stream)
-		assert.Len(t, entries, len(fileNames))
+		assert.Len(t, entries, 2)
 
+		names := []string{}
 		for _, entry := range entries {
-			assert.Contains(t, fileNames, entry.Name)
-			assert.Equal(t, uint32(fuse.S_IFREG), entry.Mode)
+			names = append(names, entry.Name)
+			assert.Equal(t, uint32(fuse.S_IFDIR), entry.Mode)
 		}
+		assert.Contains(t, names, "utf_8")
+		assert.Contains(t, names, "latin_1")
 	})
 }
 
 // collectEntries drains a DirStream into a slice
-func collectEntries(t *testing.T, stream fs.DirStream) []fuse.DirEntry {
+func collectEntries(t *testing.T, stream fusefs.DirStream) []fuse.DirEntry {
 	t.Helper()
 	entries := []fuse.DirEntry{}
 	for stream.HasNext() {

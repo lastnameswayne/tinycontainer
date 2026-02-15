@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os/exec"
 
-	"github.com/hanwen/go-fuse/v2/fs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/lastnameswayne/tinycontainer/db"
 )
 
@@ -15,7 +15,7 @@ func main() {
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
 	}
-	opts := &fs.Options{}
+	opts := &fusefs.Options{}
 	cmd := exec.Command("umount", flag.Arg(0))
 	err := cmd.Run()
 	if err != nil {
@@ -47,7 +47,7 @@ func main() {
 	opts.Debug = true
 	root := NewFS(flag.Arg(0))
 	root.root = root.newDir("/") // Explicitly set the root directory
-	server, err := fs.Mount(flag.Arg(0), root, opts)
+	server, err := fusefs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
 	}

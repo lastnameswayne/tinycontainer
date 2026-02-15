@@ -6,22 +6,22 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/hanwen/go-fuse/v2/fs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 // file represents a file in the filesystem
 type file struct {
-	fs.Inode
+	fusefs.Inode
 	Data []byte
 	attr fuse.Attr
 	path string
 }
 
-var _ = (fs.NodeReader)((*file)(nil))
-var _ = (fs.NodeOpener)((*file)(nil))
+var _ = (fusefs.NodeReader)((*file)(nil))
+var _ = (fusefs.NodeOpener)((*file)(nil))
 
-func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset int64) (fuse.ReadResult, syscall.Errno) {
+func (f *file) Read(ctx context.Context, fh fusefs.FileHandle, dest []byte, offset int64) (fuse.ReadResult, syscall.Errno) {
 	if offset < 0 || int(offset) >= len(f.Data) {
 		return fuse.ReadResultData(nil), 0
 	}
@@ -30,7 +30,7 @@ func (f *file) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 	return fuse.ReadResultData(f.Data[offset:end]), 0
 }
 
-func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (f *file) Getattr(ctx context.Context, fh fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	mode := f.attr.Mode
 	if mode == 0 {
 		mode = 0644
@@ -44,7 +44,7 @@ func (f *file) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut)
 	return 0
 }
 
-func (f *file) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+func (f *file) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if f.Data != nil {
 		return f, uint32(0), 0
 	}

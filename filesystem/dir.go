@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,18 +10,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 // Directory represents a directory in the filesystem
 type Directory struct {
-	fs.Inode
+	fusefs.Inode
 	mu       sync.RWMutex
 	keyDir   map[string]cachedMetadata
 	attr     fuse.Attr
 	path     string
-	fs       *FS
+	rootFS   *FS
 	parent   *Directory
 	children map[string]*Directory // directory name to object
 }
@@ -33,13 +33,13 @@ type cachedMetadata struct {
 	notFound bool
 }
 
-var _ = (fs.NodeReaddirer)((*Directory)(nil))
-var _ = (fs.NodeLookuper)((*Directory)(nil))
+var _ = (fusefs.NodeReaddirer)((*Directory)(nil))
+var _ = (fusefs.NodeLookuper)((*Directory)(nil))
 
 const _kernelInodeTimeout = 5 * time.Minute
 
 // Readdir lists the contents of the directory
-func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+func (d *Directory) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno) {
 	d.mu.RLock()
 	entries := make(map[string]fuse.DirEntry)
 	for name, childDir := range d.children {
@@ -55,12 +55,12 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	fileEntries, err := d.getContentsFromFileServer()
 	if err != nil {
 		// Fallback to d.children.
-		fmt.Println("Error getting directory contents:", err)
+		log.Printf("error getting directory contents: %v", err)
 		out := []fuse.DirEntry{}
 		for _, entry := range entries {
 			out = append(out, entry)
 		}
-		return fs.NewListDirStream(out), 0
+		return fusefs.NewListDirStream(out), 0
 	}
 
 	d.mu.Lock()
@@ -91,16 +91,13 @@ func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	for _, entry := range entries {
 		out = append(out, entry)
 	}
-	return fs.NewListDirStream(out), 0
+	return fusefs.NewListDirStream(out), 0
 }
 
-func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	fmt.Println("called lookup on dir", d.path)
-
+func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
 	d.mu.RLock()
 	if childDir, found := d.children[name]; found {
 		d.mu.RUnlock()
-		fmt.Println("Found child in map", name)
 		LookupStats.MemoryCacheHits.Add(1)
 		return &childDir.Inode, 0
 	}
@@ -150,7 +147,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			d.mu.Unlock()
 			return nil, syscall.ENOENT
 		}
-		fmt.Printf("Error fetching file data for %s: %v\n", name, err)
+		log.Printf("error fetching file data for %s: %v", name, err)
 		return nil, syscall.EIO
 	}
 	LookupStats.ServerFetches.Add(1)
@@ -167,7 +164,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	d.mu.Unlock()
 
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
-		fmt.Println("Error writing file to disk cache:", err)
+		log.Printf("error writing file to disk cache: %v", err)
 	}
 
 	out.SetEntryTimeout(_kernelInodeTimeout)
@@ -175,8 +172,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	return df, 0
 }
 
-func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	fmt.Println("CALLED GETATTR for", d.attr)
+func (d *Directory) Getattr(ctx context.Context, f fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Mode = syscall.S_IFDIR | 0755
 	out.Nlink = 2
 	return 0
@@ -204,8 +200,8 @@ func mapEntryToFile(entry KeyValue) *file {
 	return file
 }
 
-func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file) *fs.Inode {
-	df := d.NewInode(ctx, f, fs.StableAttr{Ino: 0})
+func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file) *fusefs.Inode {
+	df := d.NewInode(ctx, f, fusefs.StableAttr{Ino: 0})
 	d.AddChild(name, df, false)
 	if hash != "" {
 		d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{
@@ -217,13 +213,13 @@ func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file
 	return df
 }
 
-func (d *Directory) addDirChild(ctx context.Context, name string) *fs.Inode {
+func (d *Directory) addDirChild(ctx context.Context, name string) *fusefs.Inode {
 	if dir, ok := d.children[name]; ok {
 		return &dir.Inode
 	}
-	newDir := d.fs.newDir(filepath.Join(d.path, name))
+	newDir := d.rootFS.newDir(filepath.Join(d.path, name))
 	newDir.parent = d
-	node := d.NewPersistentInode(ctx, newDir, fs.StableAttr{Mode: syscall.S_IFDIR})
+	node := d.NewPersistentInode(ctx, newDir, fusefs.StableAttr{Mode: syscall.S_IFDIR})
 	d.AddChild(name, node, false)
 	d.children[name] = newDir
 	return node

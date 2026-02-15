@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 )
@@ -30,7 +31,7 @@ func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	resp, err := d.fs.client.Do(req)
+	resp, err := d.rootFS.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
 	}
@@ -67,14 +68,14 @@ func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
 func (d *Directory) getEntryFromFileServer(name string) (KeyValue, error) {
 	path := d.path
 	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", _fileserverURL, url.QueryEscape(path+"/"+name))
-	fmt.Println("CALLING URL WITH", requestUrl)
+	log.Printf("fetching %s", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
 		return KeyValue{}, fmt.Errorf("error creating request: %w", err)
 	}
 
-	resp, err := d.fs.client.Do(req)
+	resp, err := d.rootFS.client.Do(req)
 	if err != nil {
 		return KeyValue{}, fmt.Errorf("error sending request: %w", err)
 	}

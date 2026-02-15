@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"syscall"
@@ -51,7 +51,7 @@ const _timeout = 5 * time.Minute
 func NewFS(path string) *FS {
 	// Create local filecache directory
 	if err := os.MkdirAll(_cacheDir, 0755); err != nil {
-		fmt.Println("Error creating cache directory:", err)
+		log.Printf("error creating cache directory: %v", err)
 	}
 
 	fs := &FS{
@@ -83,7 +83,7 @@ func (fs *FS) newDir(path string) *Directory {
 		},
 		children: children,
 		path:     path,
-		fs:       fs,
+		rootFS:   fs,
 		keyDir:   make(map[string]cachedMetadata),
 	}
 }
