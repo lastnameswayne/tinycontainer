@@ -167,6 +167,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		log.Printf("error writing file to disk cache: %v", err)
 	}
 
+	out.Attr.Mode = f.attr.Mode | 0777
+	out.Attr.Size = f.attr.Size
+	out.Attr.Nlink = 1
 	out.SetEntryTimeout(_kernelInodeTimeout)
 	out.SetAttrTimeout(_kernelInodeTimeout)
 	return df, 0
