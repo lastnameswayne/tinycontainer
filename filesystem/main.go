@@ -30,6 +30,9 @@ func main() {
 	// start up web server
 	handler := http.NewServeMux()
 	handler.HandleFunc("/run", Run)
+	handler.HandleFunc("/run/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./website/index.html")
+	})
 	handler.HandleFunc("/stats", Stats)
 	handler.Handle("/", http.FileServer(http.Dir("./website")))
 	httpserver := &http.Server{

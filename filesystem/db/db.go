@@ -36,13 +36,17 @@ func Init(path string) error {
 
 func LogRun(filename string, startedAt time.Time, durationMs int64,
 	stdout, stderr string, exitCode int,
-	memoryHits, diskHits, serverFetches int64, username string) error {
+	memoryHits, diskHits, serverFetches int64, username string) (int64, error) {
 
-	_, err := DB.Exec(`
+	res, err := DB.Exec(`
 		INSERT INTO runs (filename, started_at, duration_ms, stdout, stderr, exit_code, memory_cache_hits, disk_cache_hits, server_fetches, username)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, filename, startedAt, durationMs, stdout, stderr, exitCode, memoryHits, diskHits, serverFetches, username)
-	return err
+	if err != nil {
+		return 0, err
+	}
+
+	return res.LastInsertId()
 }
 
 type RunRecord struct {

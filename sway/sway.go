@@ -14,6 +14,7 @@ const _publicFileServer = "https://46.101.149.241:8443"
 const _appDir = "app"
 
 type RunResponse struct {
+	RunId    int    `json:"run_id"`
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
@@ -79,8 +80,10 @@ func main() {
 					return err
 				}
 
-				timeElapsed := time.Now().UnixMilli() - start.UnixMilli()
-				fmt.Printf("took %d ms", timeElapsed)
+				bold := color.New(color.Bold).SprintFunc()
+				green := color.New(color.FgGreen).SprintFunc()
+				elapsed := time.Since(start)
+				fmt.Printf("\n%s %s\n", green("✓"), bold(fmt.Sprintf("Run completed in %s", elapsed.Round(100*time.Millisecond))))
 
 				return nil
 			},

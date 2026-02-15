@@ -21,6 +21,71 @@ const truncLines = (s, maxLines = 80) => {
 
 let rows = [];
 
+// Check if we're on a /run/<id> detail page
+function getRunIdFromPath() {
+    const match = window.location.pathname.match(/^\/run\/(\d+)$/);
+    return match ? parseInt(match[1], 10) : null;
+}
+
+function detailHTML(r) {
+    const ok = Number(r.exit_code) === 0;
+    const dot = ok ? "bg-emerald-500" : "bg-red-500";
+    const pill = ok
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-red-200 bg-red-50 text-red-700";
+
+    const startedAbs = new Date(r.started_at).toLocaleString();
+    const startedRel = rel(r.started_at);
+    const username = r.username || r.filename.split('_')[0];
+
+    return `
+    <div class="mb-4">
+      <a href="/" class="text-sm text-slate-500 hover:text-slate-700">&larr; Back to all runs</a>
+    </div>
+    <div class="rounded-2xl border border-slate-200 bg-white p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="h-3 w-3 rounded-full ${dot}"></span>
+        <h2 class="text-xl font-semibold">${esc(username)}</h2>
+        <span class="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-sm text-blue-700 font-mono">.py</span>
+        <span class="font-mono text-sm text-slate-500">#${esc(r.id)}</span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="rounded-full border px-2.5 py-1 text-xs ${pill}">
+          ${ok ? "Succeeded" : "Failed"} · exit ${esc(r.exit_code)}
+        </span>
+        <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          ${esc(fmtDur(r.duration_ms))}
+        </span>
+        <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          <span class="font-medium">${esc(r.memory_cache_hits)}</span> mem
+        </span>
+        <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          <span class="font-medium">${esc(r.disk_cache_hits)}</span> disk
+        </span>
+        <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+          <span class="font-medium">${esc(r.server_fetches)}</span> server
+        </span>
+      </div>
+
+      <div class="text-sm text-slate-500 mb-6">
+        ${esc(startedAbs)} · ${esc(startedRel)}
+      </div>
+
+      <div class="grid gap-3 lg:grid-cols-2">
+        <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-500">stdout</div>
+          <pre class="overflow-auto p-3 font-mono text-xs whitespace-pre">${esc(r.stdout || "(empty)")}</pre>
+        </div>
+        <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-500">stderr</div>
+          <pre class="overflow-auto p-3 font-mono text-xs whitespace-pre-wrap break-words text-red-700">${esc(r.stderr || "(empty)")}</pre>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function rowHTML(r) {
     const ok = Number(r.exit_code) === 0;
     const dot = ok ? "bg-emerald-500" : "bg-red-500";
@@ -40,7 +105,7 @@ function rowHTML(r) {
             <span class="h-2.5 w-2.5 rounded-full ${dot}"></span>
             <div class="font-medium">${esc(username)}</div>
             <span class="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 font-mono">.py</span>
-            <div class="font-mono text-xs text-slate-500">#${esc(r.id)}</div>
+            <a href="/run/${esc(r.id)}" class="font-mono text-xs text-slate-500 hover:text-blue-600">#${esc(r.id)}</a>
           </div>
           <div class="mt-2 text-xs text-slate-500">
             ${esc(startedAbs)} · ${esc(startedRel)}
@@ -101,6 +166,20 @@ function render() {
         : `<div class="py-10 text-center text-sm text-slate-500">No runs match your search.</div>`;
 }
 
+function renderDetail(runId) {
+    const r = rows.find((r) => r.id === runId);
+    if (!r) {
+        $("list").innerHTML = `<div class="py-10 text-center text-sm text-slate-500">Run #${runId} not found. <a href="/" class="text-blue-600 hover:underline">Back to all runs</a></div>`;
+        $("count").textContent = "—";
+        return;
+    }
+    // Hide search bar in detail view
+    $("q").style.display = "none";
+    $("refresh").style.display = "none";
+    $("count").textContent = `Run #${runId}`;
+    $("list").innerHTML = detailHTML(r);
+}
+
 async function load() {
     $("status").textContent = "Loading…";
     try {
@@ -112,13 +191,19 @@ async function load() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         rows = await res.json();
         $("status").textContent = "Updated just now";
-        render();
+
+        const detailId = getRunIdFromPath();
+        if (detailId !== null) {
+            renderDetail(detailId);
+        } else {
+            render();
+        }
     } catch (e) {
         rows = [];
         $("status").textContent = `Failed: ${e.message}`;
         $("list").innerHTML = `
       <div class="py-10 text-center text-sm text-slate-500">
-        Couldn’t reach <span class="font-mono">${esc(ENDPOINT)}</span>.<br/>
+        Couldn't reach <span class="font-mono">${esc(ENDPOINT)}</span>.<br/>
       </div>`;
         $("count").textContent = "—";
     }

@@ -198,6 +198,7 @@ type RunResponse struct {
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
 	Error    string `json:"error,omitempty"`
+	RunId    int    `json:"run_id"`
 }
 
 func Run(w http.ResponseWriter, r *http.Request) {
@@ -247,16 +248,20 @@ func Run(w http.ResponseWriter, r *http.Request) {
 
 	username := req.Username
 
+	id := int64(0)
 	if db.DB != nil {
-		if err := db.LogRun(fileName, startTime, duration.Milliseconds(),
+		fmt.Println("Database is nil")
+		id, err = db.LogRun(fileName, startTime, duration.Milliseconds(),
 			stripANSI(string(stdout)), stderrStr, exitCode,
-			memoryHits, diskHits, serverFetches, username); err != nil {
+			memoryHits, diskHits, serverFetches, username)
+		if err != nil {
 			fmt.Println("Error logging run to database:", err)
 		}
 	}
 
 	// write stdout back to user
 	response := RunResponse{
+		RunId:    int(id),
 		Stdout:   string(stdout),
 		Stderr:   stderrStr,
 		ExitCode: exitCode,
