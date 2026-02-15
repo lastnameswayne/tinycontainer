@@ -31,11 +31,7 @@ func (f *file) Read(ctx context.Context, fh fusefs.FileHandle, dest []byte, offs
 }
 
 func (f *file) Getattr(ctx context.Context, fh fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	mode := f.attr.Mode
-	if mode == 0 {
-		mode = 0644
-	}
-	out.Mode = mode
+	out.Mode = 0777
 	out.Nlink = 1 // Hardcoding to 1, assume no hard-links
 	out.Size = f.attr.Size
 	const bs = 512
