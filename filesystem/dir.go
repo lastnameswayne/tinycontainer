@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,6 @@ import (
 // Directory represents a directory in the filesystem
 type Directory struct {
 	fs.Inode
-	rc       io.Reader
 	keyDir   map[string]cachedMetadata
 	attr     fuse.Attr
 	path     string
@@ -108,7 +106,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 			return nil, syscall.EIO
 		}
 		LookupStats.ServerFetches.Add(1)
-		f := d.mapEntryToFile(entry)
+		f := mapEntryToFile(entry)
 		return d.addFileChild(ctx, name, "", f), 0
 	}
 
@@ -120,7 +118,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		binaryData, err := os.ReadFile(filepath.Join(_cacheDir, metadata.hash))
 		if err == nil {
 			LookupStats.DiskCacheHits.Add(1)
-			f := d.mapCachedEntryToFile(metadata, binaryData)
+			f := mapCachedEntryToFile(metadata, binaryData)
 			return d.addFileChild(ctx, name, "", f), 0
 		}
 	}
@@ -138,7 +136,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	}
 
 	LookupStats.ServerFetches.Add(1)
-	f := d.mapEntryToFile(entry)
+	f := mapEntryToFile(entry)
 	df := d.addFileChild(ctx, name, entry.HashValue, f)
 
 	if err := os.WriteFile(_cacheDir+"/"+entry.HashValue, entry.Value, 0644); err != nil {
@@ -154,10 +152,9 @@ func (d *Directory) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.Attr
 	return 0
 }
 
-func (d *Directory) mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryData []byte) *file {
+func mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryData []byte) *file {
 	file := &file{
 		Data: binaryData,
-		rc:   d.rc,
 		path: filepath.Join(_cacheDir, cachedMetadata.hash),
 	}
 	file.attr.Mode = uint32(cachedMetadata.mode)
@@ -166,15 +163,13 @@ func (d *Directory) mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryDa
 	return file
 }
 
-func (d *Directory) mapEntryToFile(entry KeyValue) *file {
+func mapEntryToFile(entry KeyValue) *file {
 	file := &file{
 		Data: entry.Value,
-		rc:   d.rc,
 		path: filepath.Join(_cacheDir, entry.HashValue),
 	}
 	file.attr.Mode = uint32(entry.Mode)
 	file.attr.Size = uint64(entry.Size)
-	file.attr.Gid = uint32(entry.Gid)
 
 	return file
 }

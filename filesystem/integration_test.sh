@@ -65,7 +65,7 @@ run_app() {
 # Run tests
 log "Starting integration tests..."
 
-run_app "testapp3" "hello world"
+run_app "testapp3" "hello world" 
 # run_app "testappplotting"  # Uncomment when ready
 
 echo ""
