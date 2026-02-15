@@ -98,7 +98,7 @@ function rowHTML(r) {
     const username = r.username || r.filename.split('_')[0];
 
     return `
-    <div class="run-card rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50">
+    <a href="/run/${esc(r.id)}" class="block run-card rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50 no-underline text-inherit cursor-pointer">
       <div class="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-4">
         <div>
           <div class="flex items-center gap-2">
@@ -149,7 +149,7 @@ function rowHTML(r) {
           </div>
         </details>
       </div>
-    </div>
+    </a>
   `;
 }
 
