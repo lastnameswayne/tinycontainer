@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -155,6 +156,17 @@ var runcConfigTemplateStr = `{
     ],
     "linux": {
         "resources": {
+            "memory": {
+                "limit": 1073741824,
+                "swap": 1073741824
+            },
+            "cpu": {
+                "quota": 100000,
+                "period": 100000
+            },
+            "pids": {
+                "limit": 128
+            },
             "devices": [
                 {
                     "allow": false,
@@ -193,6 +205,8 @@ var runcConfigTemplateStr = `{
 }
 `
 
+const _runcTimeout = 30 * time.Minute
+
 type RunResponse struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
@@ -216,6 +230,11 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "filename is required", http.StatusBadRequest)
 		return
 	}
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_.\-]+$`, fileName)
+	if !matched {
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
 
 	// create config.json
 	runcConfig := fmt.Sprintf(runcConfigTemplateStr, fileName)
@@ -226,10 +245,16 @@ func Run(w http.ResponseWriter, r *http.Request) {
 
 	// run runc command
 	startTime := time.Now()
-	cmd := exec.Command("sudo", "runc", "run", "mycontainer")
+	containerID := fmt.Sprintf("container-%d", time.Now().UnixNano())
+	ctx, cancel := context.WithTimeout(context.Background(), _runcTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sudo", "runc", "run", containerID)
 
 	// Capture stdout and stderr
 	stdout, err := cmd.Output()
+
+	// Clean up container state
+	exec.Command("sudo", "runc", "delete", containerID).Run()
 	duration := time.Since(startTime)
 	exitCode := 0
 	stderrStr := ""
