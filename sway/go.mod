@@ -5,7 +5,6 @@ go 1.22.1
 require (
 	github.com/briandowns/spinner v1.23.2
 	github.com/fatih/color v1.18.0
-	github.com/lastnameswayne/tinycontainer/tarread v0.0.0
 	github.com/urfave/cli/v2 v2.27.7
 )
 
@@ -18,5 +17,3 @@ require (
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/term v0.1.0 // indirect
 )
-
-replace github.com/lastnameswayne/tinycontainer/tarread => ../tarread

@@ -12,7 +12,6 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
-	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
 func run(scriptPath, username string) error {
@@ -42,8 +41,8 @@ func run(scriptPath, username string) error {
 		fmt.Printf("%s Could not read file\n", red("✗"))
 		return fmt.Errorf("could not read file")
 	}
-	withUsername := fmt.Sprintf("%s_%s", username, scriptName)
-	keyval := tarread.KeyValue{
+	withUsername := fmt.Sprintf("%s_app.py", username)
+	keyval := KeyValue{
 		Key:     fmt.Sprintf("%s/%s", _appDir, withUsername),
 		Value:   file,
 		Name:    withUsername,
@@ -52,7 +51,7 @@ func run(scriptPath, username string) error {
 		Mode:    int64(stat.Mode().Perm()),
 		ModTime: stat.ModTime().Unix(),
 	}
-	tarread.SendFileBatch([]tarread.KeyValue{keyval}, _publicFileServer)
+	sendFileBatch([]KeyValue{keyval}, _publicFileServer)
 
 	s.Stop()
 	fmt.Printf("%s Uploaded script to fileserver\n", green("✓"))

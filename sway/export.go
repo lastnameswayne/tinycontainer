@@ -9,13 +9,14 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
-	"github.com/lastnameswayne/tinycontainer/tarread"
 )
 
 func export(verbose bool) error {
-	tarread.Verbose = verbose
+	Verbose = verbose
 	green := color.New(color.FgGreen).SprintFunc()
+	url := "https://46.101.149.241:8443"
 
+	fmt.Println("This can take a few minutes...")
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 	s.Suffix = " Building docker image..."
 	s.Start()
@@ -27,7 +28,7 @@ func export(verbose bool) error {
 		log.Fatal("build", err)
 	}
 	s.Stop()
-	fmt.Printf("%s Building docker image\n", green("✓"))
+	fmt.Printf("%s Built docker image\n", green("✓"))
 
 	s.Suffix = " Saving image to tarball..."
 	s.Start()
@@ -48,13 +49,32 @@ func export(verbose bool) error {
 	s.Stop()
 	fmt.Printf("%s Saved tarball\n", green("✓"))
 
-	s.Suffix = " Uploading to fileserver..."
+	s.Suffix = " Extracting image..."
 	s.Start()
-	tarread.Export("test.tar", "https://46.101.149.241:8443")
+	files := extractImage("test.tar")
 	s.Stop()
-	fmt.Printf("%s Uploaded to fileserver\n", green("✓"))
+	fmt.Printf("%s Extracted image (%d files)\n", green("✓"), len(files))
+
+	s.Suffix = " Syncing with fileserver..."
+	s.Start()
+	toUpload := syncNewFiles(files, url)
+	s.Stop()
+	fmt.Printf("%s Synced with fileserver — %d new files\n", green("✓"), len(toUpload))
+
+	if len(toUpload) > 0 {
+		s.Suffix = " Uploading to fileserver..."
+		s.Start()
+		uploadFiles(toUpload, url, func(sent, total int) {
+			pct := sent * 100 / total
+			s.Suffix = fmt.Sprintf(" Uploading to fileserver... %d/%d files (%d%%)", sent, total, pct)
+		})
+		s.Stop()
+		fmt.Printf("%s Uploaded %d files to fileserver\n", green("✓"), len(toUpload))
+	}
 
 	os.Remove("test.tar")
+
+	fmt.Printf("\n%s Ready for sway run!\n", green("✓"))
 
 	return nil
 }
