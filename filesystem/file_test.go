@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"syscall"
 	"testing"
+
+	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 func TestFileRead(t *testing.T) {
@@ -56,6 +59,18 @@ func TestFileRead(t *testing.T) {
 			expected: []byte{},
 		},
 	}
+
+	t.Run("nil data returns EIO", func(t *testing.T) {
+		f := &file{
+			path: "/nonexistent",
+			attr: fuse.Attr{Size: 100},
+		}
+		dest := make([]byte, 100)
+		_, errno := f.Read(context.Background(), nil, dest, 0)
+		if errno != syscall.EIO {
+			t.Errorf("expected EIO for nil Data, got %v", errno)
+		}
+	})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

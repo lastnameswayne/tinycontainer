@@ -64,7 +64,7 @@ type RunRecord struct {
 }
 
 func GetAllRuns() ([]RunRecord, error) {
-	rows, err := DB.Query("SELECT id, filename, started_at, duration_ms, stdout, stderr, exit_code, memory_cache_hits, disk_cache_hits, server_fetches FROM runs ORDER BY id DESC")
+	rows, err := DB.Query("SELECT id, filename, started_at, duration_ms, stdout, stderr, exit_code, memory_cache_hits, disk_cache_hits, server_fetches, username FROM runs ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func GetAllRuns() ([]RunRecord, error) {
 	var runs []RunRecord
 	for rows.Next() {
 		var r RunRecord
-		if err := rows.Scan(&r.ID, &r.Filename, &r.StartedAt, &r.DurationMs, &r.Stdout, &r.Stderr, &r.ExitCode, &r.MemoryCacheHits, &r.DiskCacheHits, &r.ServerFetches); err != nil {
+		if err := rows.Scan(&r.ID, &r.Filename, &r.StartedAt, &r.DurationMs, &r.Stdout, &r.Stderr, &r.ExitCode, &r.MemoryCacheHits, &r.DiskCacheHits, &r.ServerFetches, &r.Username); err != nil {
 			return nil, err
 		}
 		runs = append(runs, r)

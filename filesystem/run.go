@@ -222,9 +222,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	fmt.Println("received run request", r.Body)
 
-	// read filename
 	fileName := req.FileName
 	if fileName == "" {
 		http.Error(w, "filename is required", http.StatusBadRequest)
@@ -250,10 +248,8 @@ func Run(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sudo", "runc", "run", containerID)
 
-	// Capture stdout and stderr
 	stdout, err := cmd.Output()
 
-	// Clean up container state
 	exec.Command("sudo", "runc", "delete", containerID).Run()
 	duration := time.Since(startTime)
 	exitCode := 0
