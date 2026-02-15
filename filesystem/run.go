@@ -250,7 +250,6 @@ func Run(w http.ResponseWriter, r *http.Request) {
 
 	id := int64(0)
 	if db.DB != nil {
-		fmt.Println("Database is nil")
 		id, err = db.LogRun(fileName, startTime, duration.Milliseconds(),
 			stripANSI(string(stdout)), stderrStr, exitCode,
 			memoryHits, diskHits, serverFetches, username)
