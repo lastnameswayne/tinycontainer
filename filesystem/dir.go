@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -32,6 +33,8 @@ type cachedMetadata struct {
 
 var _ = (fs.NodeReaddirer)((*Directory)(nil))
 var _ = (fs.NodeLookuper)((*Directory)(nil))
+
+const _kernelInodeTimeout = 5 * time.Minute
 
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
@@ -107,6 +110,8 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		}
 		LookupStats.ServerFetches.Add(1)
 		f := mapEntryToFile(entry)
+		out.SetEntryTimeout(0)
+		out.SetAttrTimeout(0)
 		return d.addFileChild(ctx, name, "", f), 0
 	}
 
@@ -142,6 +147,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		fmt.Println("Error writing file to disk cache:", err)
 	}
+
+	out.SetEntryTimeout(_kernelInodeTimeout)
+	out.SetAttrTimeout(_kernelInodeTimeout)
 	return df, 0
 }
 
