@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"log"
 	"os"
 	"syscall"
 
@@ -22,6 +23,9 @@ var _ = (fusefs.NodeReader)((*file)(nil))
 var _ = (fusefs.NodeOpener)((*file)(nil))
 
 func (f *file) Read(ctx context.Context, fh fusefs.FileHandle, dest []byte, offset int64) (fuse.ReadResult, syscall.Errno) {
+	if f.Data == nil {
+		log.Printf("READ called with nil Data, path=%s size=%d", f.path, f.attr.Size)
+	}
 	if offset < 0 || int(offset) >= len(f.Data) {
 		return fuse.ReadResultData(nil), 0
 	}

@@ -190,6 +190,9 @@ func mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryData []byte) *fil
 }
 
 func mapEntryToFile(entry KeyValue) *file {
+	if int64(len(entry.Value)) != entry.Size {
+		log.Printf("SIZE MISMATCH for %s: Value len=%d, Size=%d", entry.Name, len(entry.Value), entry.Size)
+	}
 	file := &file{
 		Data: entry.Value,
 		path: filepath.Join(_cacheDir, entry.HashValue),
