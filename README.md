@@ -4,6 +4,8 @@ A container runtime built around lazy-loading container filesystems via FUSE. Th
 
 Built to understand the infrastructure that makes Modal work. This is just for fun.
 
+View recent runs at http://167.71.54.99:8444/
+
 ## Quick start example
 
 ```dockerfile
@@ -41,38 +43,27 @@ sway run app.py # runs the script
 Cold start latency should be bounded by the files a process actually touches, not by total image size. A scipy image is ~1.5GB. `import scipy; scipy.linalg.svd(...)` touches maybe 50MB of that. By mounting a FUSE filesystem as the container rootfs and fetching lazily, the container starts in seconds instead of waiting for a full image pull.
 
 ```
-                           ┌─────────────────────────────────────────┐
-                           │              fileserver                  │
-                           │       content-addressed blob store       │
-                           │         (SHA1-keyed, TLS :8443)         │
-                           └──────────┬──────────────────────────────┘
-                                      │
-                              on-demand fetches
-                                      │
-┌──────────┐    run request    ┌──────▼───────────────────────────────┐
-│          │ ─────────────────>│               worker                  │
-│ sway CLI │                   │                                      │
-│          │ ─── export ──────>│  ┌────────────────────────────────┐  │
-└──────────┘   (to fileserver) │  │     FUSE filesystem (go-fuse)  │  │
-                               │  │                                │  │
-                               │  │  lookup chain:                 │  │
-                               │  │   1. memory cache (children)   │  │
-                               │  │   2. disk cache (filecache/)   │  │
-                               │  │   3. server fetch (HTTP GET)   │  │
-                               │  └───────────────┬────────────────┘  │
-                               │                  │ mounted as rootfs  │
-                               │  ┌───────────────▼────────────────┐  │
-                               │  │      runc container (OCI)      │  │
-                               │  │  namespaces: pid,net,ipc,uts,  │  │
-                               │  │    mount,cgroup                │  │
-                               │  │  caps: audit_write,kill,       │  │
-                               │  │    net_bind_service             │  │
-                               │  │  limits: 1GB mem, 128 PIDs     │  │
-                               │  └────────────────────────────────┘  │
-                               │                                      │
-                               │  SQLite: logs per-run cache stats    │
-                               └──────────────────────────────────────┘
+                              ┌──────────────────────────────────┐
+                              │           fileserver              │
+                              │    content-addressed blob store   │
+                              └───────────────┬──────────────────┘
+                                              │ on-demand fetches
+                                              │
+┌──────────┐   run request    ┌───────────────▼──────────────────┐
+│ sway CLI │ ────────────────>│   worker (FUSE filesystem)       │
+└──────────┘                  │                                  │
+                              │   lookup chain:                  │
+                              │    1. memory cache (children)    │
+                              │    2. disk cache (filecache/)    │
+                              │    3. server fetch (HTTP GET)    │
+                              └──────────────────────────────────┘
 ```
+
+**Fileserver** -- content-addressed blob store. Files keyed by SHA1. `sway export` populates it; after that it just serves fetches.
+
+**Worker** -- mounts a FUSE filesystem (`go-fuse`) as the container rootfs, then runs containers via `runc`. When the container process touches a file, FUSE checks memory cache, then disk cache, then fetches from the fileserver. Logs cache stats per run to SQLite.
+
+**CLI** -- `sway export` builds and syncs the image. `sway run` sends the script to the worker and streams back stdout/stderr.
 
 
 ## Running it locally
