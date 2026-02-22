@@ -11,9 +11,6 @@ var LookupStats struct {
 	ServerFetches   atomic.Int64 // Had to fetch from fileserver
 }
 
-// We use this to cache directories we know are not on the fileserver to avoid attempting a re-fetch.
-const _NOT_FOUND = "NOT_FOUND"
-
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
 	Key       string `json:"key"`

@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	debug := flag.Bool("debug", false, "enable FUSE debug logging")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
@@ -47,7 +48,7 @@ func main() {
 	}()
 
 	//init root
-	opts.Debug = true
+	opts.Debug = *debug
 	root := NewFS(flag.Arg(0))
 	root.root = root.newDir("/") // Explicitly set the root directory
 	server, err := fusefs.Mount(flag.Arg(0), root, opts)

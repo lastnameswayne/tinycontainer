@@ -376,31 +376,6 @@ func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, erro
 	return out, nil
 }
 
-func createSymlinkMapFromLayer(result []KeyValue, symlinks []Symlink) []KeyValue {
-	keyValues := []KeyValue{}
-	for _, symlink := range symlinks {
-		for _, val := range result {
-			if strings.Contains(symlink.Linkname, "ld-linux-x86-64") && strings.Contains(val.Key, "ld-linux-x86-64") {
-				logln(symlink.Linkname, symlink.Name, val.Key)
-			}
-			if symlink.Linkname != val.Key {
-				continue
-			}
-			logf("found %s %d", symlink.Name, len(val.Value))
-			keyValue := KeyValue{
-				Key:   symlink.Name,
-				Value: val.Value,
-			}
-
-			keyValues = append(keyValues, keyValue)
-		}
-
-	}
-
-	return keyValues
-
-}
-
 func createTarFromDir(dir string, out string) error {
 	outFile, err := os.Create(out)
 	if err != nil {
@@ -453,32 +428,6 @@ type Manifest struct {
 	Config   string   `json:"Config"`
 	RepoTags []string `json:"RepoTags"`
 	Layers   []string `json:"Layers"`
-}
-
-func sendFile(file KeyValue, url string) {
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
-	req, err := http.NewRequest("PUT", url+"/upload", bytes.NewReader(file.Value))
-	if err != nil {
-		log.Fatalf("Error creating HTTP request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("X-File-Name", file.Key)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Error sending HTTP request: %v", err)
-	}
-
-	// Close the response body
-	defer resp.Body.Close()
 }
 
 // SyncFiles sends file hashes to server and returns set of keys that need uploading

@@ -13,11 +13,6 @@ const esc = (s) =>
 
 const fmtDur = (ms) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`);
 const rel = (iso) => dayjs(iso).fromNow();
-const truncLines = (s, maxLines = 80) => {
-    s = String(s ?? "");
-    const lines = s.split("\n");
-    return lines.length > maxLines ? lines.slice(0, maxLines).join("\n") + "\n…(truncated)" : s;
-};
 
 let rows = [];
 
@@ -130,24 +125,6 @@ function rowHTML(r) {
           </span>
         </div>
 
-        <details class="lg:col-span-3 border-t border-slate-100 pt-3">
-          <summary class="cursor-pointer text-xs text-slate-500 hover:text-slate-700 select-none flex items-center justify-between">
-            <span>Logs</span>
-            <span class="font-mono">${(r.stderr && r.stderr.length) ? "stderr present" : "no stderr"}</span>
-          </summary>
-
-          <div class="mt-3 grid gap-2 lg:grid-cols-2">
-            <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-              <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-500">stdout</div>
-              <pre class="max-h-56 overflow-auto p-3 font-mono text-xs whitespace-pre">${esc(truncLines(r.stdout) || "(empty)")}</pre>
-            </div>
-
-            <div class="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-              <div class="border-b border-slate-200 px-3 py-2 text-xs text-slate-500">stderr</div>
-              <pre class="max-h-56 overflow-auto p-3 font-mono text-xs whitespace-pre-wrap break-words text-red-700">${esc(truncLines(r.stderr) || "(empty)")}</pre>
-            </div>
-          </div>
-        </details>
       </div>
     </div>
   `;

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -234,9 +235,16 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// create config.json
+	// create a per-run bundle directory so concurrent runs don't share config.json
+	bundleDir, err := os.MkdirTemp("", "runc-bundle-*")
+	if err != nil {
+		http.Error(w, "Failed to create bundle dir: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(bundleDir)
+
 	runcConfig := fmt.Sprintf(runcConfigTemplateStr, fileName)
-	if err := os.WriteFile("config.json", []byte(runcConfig), 0744); err != nil {
+	if err := os.WriteFile(filepath.Join(bundleDir, "config.json"), []byte(runcConfig), 0644); err != nil {
 		http.Error(w, "Failed to write config: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -246,7 +254,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 	containerID := fmt.Sprintf("container-%d", time.Now().UnixNano())
 	ctx, cancel := context.WithTimeout(context.Background(), _runcTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sudo", "runc", "run", containerID)
+	cmd := exec.CommandContext(ctx, "sudo", "runc", "run", "--bundle", bundleDir, containerID)
 
 	stdout, err := cmd.Output()
 
