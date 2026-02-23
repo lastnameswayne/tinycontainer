@@ -1,8 +1,6 @@
 # tinycontainerruntime
 
-A container runtime built around lazy-loading container filesystems via FUSE. The container never has the full image. Instead, a userspace filesystem intercepts `stat()`/`open()`/`read()` calls and fetches files on-demand from a content-addressed fileserver, with a three-level cache (memory, disk, server) to make subsequent runs faster.
-
-Built to understand the infrastructure that makes Modal work. This is just for fun.
+A container runtime built around lazy-loading container filesystems via FUSE. Built to understand the infrastructure that makes Modal work. This is just for fun.
 
 View recent runs at http://167.71.54.99:8444/
 
@@ -27,9 +25,27 @@ u, s, vh = linalg.svd(a)
 print(f"svd: u={u.shape}, s={s.shape}")
 ```
 
+Install the CLI
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/sway_darwin_arm64.tar.gz | tar -xz
+sudo mv sway /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/sway_darwin_amd64.tar.gz | tar -xz
+sudo mv sway /usr/local/bin/
+
+# Linux (amd64)
+curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/sway_linux_amd64.tar.gz | tar -xz
+sudo mv sway /usr/local/bin/
+```
+
+Or with Go installed: `go install github.com/lastnameswayne/tinycontainer/sway@latest`
+
 ```bash
 sway export # populates fileserver
-export SWAY_USERNAME=yourname 
+export SWAY_USERNAME=yourname
 sway run app.py # runs the script
 # svd: u=(100, 100), s=(100,), vh=(100, 100)
 ```
@@ -92,11 +108,11 @@ go run . mnt/           # mounts FUSE at mnt/, HTTP server on :8444
 
 ### CLI
 
+Download a pre-built binary from the [releases page](https://github.com/lastnameswayne/tinycontainer/releases/latest), or see the install commands in the quick start above.
+
 ```bash
-cd sway/
-go build -o sway .
-./sway export           # from a directory with a Dockerfile
-SWAY_USERNAME=yourname ./sway run app.py
+sway export             # from a directory with a Dockerfile
+SWAY_USERNAME=yourname sway run app.py
 ```
 
 ### Integration tests
