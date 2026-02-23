@@ -91,7 +91,10 @@ func run(scriptPath, username string) error {
 		s.Stop()
 		return err
 	}
-	json.Unmarshal(bodybytes, &response)
+	if err := json.Unmarshal(bodybytes, &response); err != nil {
+		s.Stop()
+		return fmt.Errorf("invalid response from worker: %w\nbody: %s", err, string(bodybytes))
+	}
 
 	s.Stop()
 

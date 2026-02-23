@@ -38,7 +38,8 @@ var runcConfigTemplateStr = `{
             "gid": 0
         },
         "args": [
-            "/usr/local/bin/python3.10",
+            "/usr/bin/env",
+            "python3",
             "/%s"
         ],
         "env": [

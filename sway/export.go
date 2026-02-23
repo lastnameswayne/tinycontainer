@@ -57,7 +57,11 @@ func export(verbose bool) error {
 
 	s.Suffix = " Extracting image..."
 	s.Start()
-	files := extractImage("test.tar")
+	files, err := extractImage("test.tar")
+	if err != nil {
+		s.Stop()
+		return fmt.Errorf("extracting image: %w", err)
+	}
 	s.Stop()
 	fmt.Printf("%s Extracted image (%d files)\n", green("✓"), len(files))
 

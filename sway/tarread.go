@@ -76,18 +76,22 @@ func computeHash(kv KeyValue) string {
 type ProgressFunc func(sent, total int)
 
 // extractImage extracts a docker image tarball into a list of files to upload.
-func extractImage(tarfile string) []KeyValue {
+func extractImage(tarfile string) ([]KeyValue, error) {
 	tempDir, err := os.MkdirTemp("", "image-extract-")
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
+
 	tarFile, err := os.Open(tarfile)
+	if err != nil {
+		return nil, fmt.Errorf("open tarfile: %w", err)
+	}
 	readLayer(tarFile, tempDir)
 
 	result, err := tarFileToEntries(tarfile)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("read tar entries: %w", err)
 	}
 	var manifest KeyValue
 	for _, e := range result {
@@ -98,23 +102,23 @@ func extractImage(tarfile string) []KeyValue {
 
 	var manifests []Manifest
 	if err := json.Unmarshal(manifest.Value, &manifests); err != nil {
-		log.Fatalf("Cannot unmarshal manifest: %v", err)
+		return nil, fmt.Errorf("cannot unmarshal manifest: %w", err)
 	}
 	if len(manifests) == 0 {
-		panic("err")
+		return nil, fmt.Errorf("empty manifest.json in tarball")
 	}
 
 	logln(manifests[0].Layers)
 	rootfsDir := "/tmp/rootfs"
 	if err := os.MkdirAll(rootfsDir, 0755); err != nil {
-		log.Fatalf("Cannot create rootfsDir: %v", err)
+		return nil, fmt.Errorf("create rootfs dir: %w", err)
 	}
 
 	allSymlinks := []Symlink{}
 	for _, layer := range manifests[0].Layers {
 		f, err := os.Open(filepath.Join(tempDir, layer))
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("open layer %s: %w", layer, err)
 		}
 
 		logln("layer", f.Name(), layer)
@@ -129,17 +133,17 @@ func extractImage(tarfile string) []KeyValue {
 
 	finalTar := filepath.Join(tempDir, "final.tar")
 	if err := createTarFromDir(rootfsDir, finalTar); err != nil {
-		log.Fatalf("Failed to create final tar: %v", err)
+		return nil, fmt.Errorf("create final tar: %w", err)
 	}
 
 	result, err = tarFileToEntries(finalTar)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("read final tar entries: %w", err)
 	}
 
 	symlinkEntries, err := buildSymlinkEntries(rootfsDir, allSymlinks)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("build symlink entries: %w", err)
 	}
 
 	result = append(result, symlinkEntries...)
@@ -166,7 +170,7 @@ func extractImage(tarfile string) []KeyValue {
 		filteredResult = append(filteredResult, file)
 	}
 
-	return filteredResult
+	return filteredResult, nil
 }
 
 // syncNewFiles syncs with the server and returns only the files that need uploading.
