@@ -247,7 +247,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(bundleDir)
 
-	runcConfig := fmt.Sprintf(runcConfigTemplateStr, rootfsPath, filepath.Join(rootfsPath, "usr", "lib64"), fileName)
+	runcConfig := fmt.Sprintf(runcConfigTemplateStr, fileName, rootfsPath, filepath.Join(rootfsPath, "usr", "lib64"))
 	if err := os.WriteFile(filepath.Join(bundleDir, "config.json"), []byte(runcConfig), 0644); err != nil {
 		http.Error(w, "Failed to write config: "+err.Error(), http.StatusInternalServerError)
 		return
