@@ -89,7 +89,7 @@ Cold start latency should be bounded by the files a process actually touches, no
 - Go 1.24+
 - Docker (for image builds)
 - Linux worker machine with `runc` installed
-- Server addresses are hardcoded in `sway/sway.go`, `sway/run.go`, and `filesystem/client.go`
+- You can set server addresses with the env variables `SERVER_URL` and `WORKER_URL`
 
 ### Fileserver
 

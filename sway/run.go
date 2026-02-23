@@ -51,7 +51,7 @@ func run(scriptPath, username string) error {
 		Mode:    int64(stat.Mode().Perm()),
 		ModTime: stat.ModTime().Unix(),
 	}
-	sendFileBatch([]KeyValue{keyval}, _publicFileServer)
+	sendFileBatch([]KeyValue{keyval}, fileServerURL)
 
 	s.Stop()
 	fmt.Printf("%s Uploaded script to fileserver\n", green("✓"))
@@ -71,7 +71,7 @@ func run(scriptPath, username string) error {
 		return err
 	}
 
-	request, err := http.NewRequest("POST", "http://167.71.54.99:8444/run", bytes.NewBuffer(marshalled))
+	request, err := http.NewRequest("POST", workerURL+"/run", bytes.NewBuffer(marshalled))
 	if err != nil {
 		s.Stop()
 		return err
@@ -102,7 +102,7 @@ func run(scriptPath, username string) error {
 	}
 
 	if response.RunId > 0 {
-		fmt.Printf("%s Container execution complete. View run at http://167.71.54.99:8444/run/%d\n", green("✓"), response.RunId)
+		fmt.Printf("%s Container execution complete. View run at %s/run/%d\n", green("✓"), workerURL, response.RunId)
 	} else {
 		fmt.Printf("%s Container execution complete\n", green("✓"))
 	}

@@ -14,7 +14,6 @@ import (
 func export(verbose bool) error {
 	Verbose = verbose
 	green := color.New(color.FgGreen).SprintFunc()
-	url := "https://46.101.149.241:8443"
 
 	fmt.Println("This can take a few minutes...")
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
@@ -57,14 +56,14 @@ func export(verbose bool) error {
 
 	s.Suffix = " Syncing with fileserver..."
 	s.Start()
-	toUpload := syncNewFiles(files, url)
+	toUpload := syncNewFiles(files, fileServerURL)
 	s.Stop()
 	fmt.Printf("%s Synced with fileserver — %d new files\n", green("✓"), len(toUpload))
 
 	if len(toUpload) > 0 {
 		s.Suffix = " Uploading to fileserver..."
 		s.Start()
-		uploadFiles(toUpload, url, func(sent, total int) {
+		uploadFiles(toUpload, fileServerURL, func(sent, total int) {
 			pct := sent * 100 / total
 			s.Suffix = fmt.Sprintf(" Uploading to fileserver... %d/%d files (%d%%)", sent, total, pct)
 		})

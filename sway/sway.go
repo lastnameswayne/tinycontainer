@@ -10,8 +10,17 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const _publicFileServer = "https://46.101.149.241:8443"
+var fileServerURL = getEnv("FILESERVER_URL", "https://46.101.149.241:8443")
+var workerURL = getEnv("WORKER_URL", "http://167.71.54.99:8444")
+
 const _appDir = "app"
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 type RunResponse struct {
 	RunId    int    `json:"run_id"`

@@ -20,9 +20,9 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := _fileserverURL
-		_fileserverURL = server.URL
-		defer func() { _fileserverURL = oldURL }()
+		oldURL := fileserverURL
+		fileserverURL = server.URL
+		defer func() { fileserverURL = oldURL }()
 
 		testFS := &FS{
 			client: server.Client(),
@@ -59,9 +59,9 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := _fileserverURL
-		_fileserverURL = server.URL
-		defer func() { _fileserverURL = oldURL }()
+		oldURL := fileserverURL
+		fileserverURL = server.URL
+		defer func() { fileserverURL = oldURL }()
 
 		testFS := &FS{client: server.Client()}
 
@@ -85,9 +85,9 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := _fileserverURL
-		_fileserverURL = server.URL
-		defer func() { _fileserverURL = oldURL }()
+		oldURL := fileserverURL
+		fileserverURL = server.URL
+		defer func() { fileserverURL = oldURL }()
 
 		testFS := &FS{client: server.Client()}
 

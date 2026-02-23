@@ -6,9 +6,19 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 )
 
-var _fileserverURL = "https://46.101.149.241:8443"
+const _defaultFileserverURL = "https://46.101.149.241:8443"
+
+var fileserverURL = getFileserverURL()
+
+func getFileserverURL() string {
+	if v := os.Getenv("FILESERVER_URL"); v != "" {
+		return v
+	}
+	return _defaultFileserverURL
+}
 
 var ErrNotFoundOnFileServer = fmt.Errorf("NOT FOUND ON FILESERVER")
 
@@ -24,7 +34,7 @@ type listEntry struct {
 
 // getContentsFromFileServer only gets the filenames and metadata - not the actual binary value of the files in the directory.
 func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
-	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", _fileserverURL, url.QueryEscape(d.path))
+	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", fileserverURL, url.QueryEscape(d.path))
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -67,7 +77,7 @@ func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
 
 func (d *Directory) getEntryFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", _fileserverURL, url.QueryEscape(path+"/"+name))
+	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", fileserverURL, url.QueryEscape(path+"/"+name))
 	log.Printf("fetching %s", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
