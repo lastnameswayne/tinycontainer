@@ -108,8 +108,6 @@ go run . mnt/           # mounts FUSE at mnt/, HTTP server on :8444
 
 ### CLI
 
-Download a pre-built binary from the [releases page](https://github.com/lastnameswayne/tinycontainer/releases/latest), or see the install commands in the quick start above.
-
 ```bash
 sway export             # from a directory with a Dockerfile
 SWAY_USERNAME=yourname sway run app.py
