@@ -14,6 +14,10 @@ import (
 	"github.com/lastnameswayne/tinycontainer/db"
 )
 
+// rootfsPath is the absolute path to the FUSE mount's app directory, used as
+// the runc container rootfs. Set once at startup from the CLI mount argument.
+var rootfsPath string
+
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 func stripANSI(s string) string {
@@ -69,7 +73,7 @@ var runcConfigTemplateStr = `{
         "noNewPrivileges": true
     },
     "root": {
-        "path": "/root/tinycontainer/root/myfusefilesystem/mnt/app",
+        "path": "%s",
         "readonly": false
     },
     "hostname": "runc",
@@ -82,7 +86,7 @@ var runcConfigTemplateStr = `{
         {
             "destination": "/lib64",
             "type": "bind",
-            "source": "/root/tinycontainer/root/myfusefilesystem/mnt/app/usr/lib64",
+            "source": "%s",
             "options": ["rbind", "ro"]
         },
         {
@@ -243,7 +247,7 @@ func Run(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(bundleDir)
 
-	runcConfig := fmt.Sprintf(runcConfigTemplateStr, fileName)
+	runcConfig := fmt.Sprintf(runcConfigTemplateStr, rootfsPath, filepath.Join(rootfsPath, "usr", "lib64"), fileName)
 	if err := os.WriteFile(filepath.Join(bundleDir, "config.json"), []byte(runcConfig), 0644); err != nil {
 		http.Error(w, "Failed to write config: "+err.Error(), http.StatusInternalServerError)
 		return

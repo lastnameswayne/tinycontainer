@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -15,12 +16,18 @@ func export(verbose bool) error {
 	Verbose = verbose
 	green := color.New(color.FgGreen).SprintFunc()
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("could not get working directory: %w", err)
+	}
+	imageName := "sway-" + filepath.Base(cwd)
+
 	fmt.Println("This can take a few minutes...")
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 	s.Suffix = " Building docker image..."
 	s.Start()
 
-	buildCmd := exec.Command("docker", "buildx", "build", "--platform", "linux/amd64", "--tag", "hello-py", "--load", ".")
+	buildCmd := exec.Command("docker", "buildx", "build", "--platform", "linux/amd64", "--tag", imageName, "--load", ".")
 	if err := buildCmd.Run(); err != nil {
 		s.Stop()
 		color.Red("✗ Build failed")
@@ -32,7 +39,7 @@ func export(verbose bool) error {
 	s.Suffix = " Saving image to tarball..."
 	s.Start()
 
-	saveCmd := exec.Command("docker", "image", "save", "hello-py")
+	saveCmd := exec.Command("docker", "image", "save", imageName)
 	outputFile, err := os.Create("test.tar")
 	if err != nil {
 		s.Stop()

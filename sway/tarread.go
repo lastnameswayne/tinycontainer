@@ -184,7 +184,7 @@ func syncNewFiles(files []KeyValue, url string) []KeyValue {
 
 // uploadFiles uploads files in batches, calling onProgress after each batch.
 func uploadFiles(files []KeyValue, url string, onProgress ProgressFunc) {
-	batchSize := 3000
+	batchSize := 3000 // 3000 files per batch to minimize round trips
 	sent := 0
 	if onProgress != nil {
 		onProgress(0, len(files))

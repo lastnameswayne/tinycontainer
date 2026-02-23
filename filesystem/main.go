@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/lastnameswayne/tinycontainer/db"
@@ -16,9 +17,15 @@ func main() {
 	if len(flag.Args()) < 1 {
 		log.Fatal("Usage:\n  hello MOUNTPOINT")
 	}
+	absMount, err := filepath.Abs(flag.Arg(0))
+	if err != nil {
+		log.Fatalf("invalid mount path: %v", err)
+	}
+	rootfsPath = filepath.Join(absMount, "app")
+
 	opts := &fusefs.Options{}
 	cmd := exec.Command("umount", flag.Arg(0))
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		log.Default().Printf("Command umount execution failed: %v", err)
 	}
