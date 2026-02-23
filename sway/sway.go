@@ -67,7 +67,7 @@ func main() {
 				bold := color.New(color.Bold).SprintFunc()
 
 				elapsed := time.Since(start)
-				fmt.Printf("\n%s Export completed in %s\n", bold("Done!"), elapsed.Round(time.Millisecond))
+				fmt.Printf("\n%s Export completed in %s\n\n", bold("Done!"), elapsed.Round(time.Millisecond))
 				return nil
 			},
 		},
@@ -92,7 +92,7 @@ func main() {
 				bold := color.New(color.Bold).SprintFunc()
 				green := color.New(color.FgGreen).SprintFunc()
 				elapsed := time.Since(start)
-				fmt.Printf("\n%s %s\n", green("✓"), bold(fmt.Sprintf("Run completed in %s", elapsed.Round(100*time.Millisecond))))
+				fmt.Printf("\n%s %s\n\n", green("✓"), bold(fmt.Sprintf("Run completed in %s", elapsed.Round(100*time.Millisecond))))
 
 				return nil
 			},

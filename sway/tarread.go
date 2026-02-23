@@ -188,7 +188,7 @@ func syncNewFiles(files []KeyValue, url string) []KeyValue {
 
 // uploadFiles uploads files in batches, calling onProgress after each batch.
 func uploadFiles(files []KeyValue, url string, onProgress ProgressFunc) {
-	batchSize := 3000 // 3000 files per batch to minimize round trips
+	batchSize := 100 // files per batch
 	sent := 0
 	if onProgress != nil {
 		onProgress(0, len(files))
@@ -471,9 +471,10 @@ func syncFiles(files []KeyValue, url string) map[string]struct{} {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
 	var syncResp SyncResponse
-	if err := json.NewDecoder(resp.Body).Decode(&syncResp); err != nil {
-		log.Fatalf("Error decoding sync response: %v", err)
+	if err := json.Unmarshal(body, &syncResp); err != nil {
+		log.Fatalf("Error decoding sync response (status %d): %v\nbody: %s", resp.StatusCode, err, string(body))
 	}
 
 	// Convert to set for O(1) lookup

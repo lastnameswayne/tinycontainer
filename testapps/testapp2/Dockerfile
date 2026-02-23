@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.10
+FROM python:3.12
 
 # Set the working directory to /app
 WORKDIR /app
@@ -11,7 +11,7 @@ COPY . /app
 EXPOSE 80
 
 # Define environment variable
-ENV NAME World
+ENV NAME=World
 RUN pip install numpy
 # Run app.py when the container launches
 CMD ["python", "app.py"]

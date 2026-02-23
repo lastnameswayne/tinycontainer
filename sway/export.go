@@ -12,6 +12,8 @@ import (
 	"github.com/fatih/color"
 )
 
+const _imageTar = "image.tar"
+
 func export(verbose bool) error {
 	Verbose = verbose
 	green := color.New(color.FgGreen).SprintFunc()
@@ -28,10 +30,11 @@ func export(verbose bool) error {
 	s.Start()
 
 	buildCmd := exec.Command("docker", "buildx", "build", "--platform", "linux/amd64", "--tag", imageName, "--load", ".")
+	buildCmd.Stderr = os.Stderr
 	if err := buildCmd.Run(); err != nil {
 		s.Stop()
 		color.Red("✗ Build failed")
-		log.Fatal("build", err)
+		log.Fatal(err)
 	}
 	s.Stop()
 	fmt.Printf("%s Built docker image\n", green("✓"))
@@ -40,12 +43,13 @@ func export(verbose bool) error {
 	s.Start()
 
 	saveCmd := exec.Command("docker", "image", "save", imageName)
-	outputFile, err := os.Create("test.tar")
+	outputFile, err := os.Create(_imageTar)
 	if err != nil {
 		s.Stop()
 		log.Fatal("error", err)
 	}
 	defer outputFile.Close()
+	defer os.Remove(_imageTar)
 	saveCmd.Stdout = outputFile
 	if err := saveCmd.Run(); err != nil {
 		s.Stop()
@@ -57,7 +61,7 @@ func export(verbose bool) error {
 
 	s.Suffix = " Extracting image..."
 	s.Start()
-	files, err := extractImage("test.tar")
+	files, err := extractImage(_imageTar)
 	if err != nil {
 		s.Stop()
 		return fmt.Errorf("extracting image: %w", err)
@@ -82,7 +86,7 @@ func export(verbose bool) error {
 		fmt.Printf("%s Uploaded %d files to fileserver\n", green("✓"), len(toUpload))
 	}
 
-	os.Remove("test.tar")
+	os.Remove(_imageTar)
 
 	fmt.Printf("\n%s Ready for sway run!\n", green("✓"))
 
