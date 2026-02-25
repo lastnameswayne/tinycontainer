@@ -27,10 +27,9 @@ type Directory struct {
 }
 
 type cachedMetadata struct {
-	hash     string
-	mode     int64
-	size     int64
-	notFound bool
+	hash string
+	mode int64
+	size int64
 }
 
 var _ = (fusefs.NodeReaddirer)((*Directory)(nil))
@@ -123,13 +122,16 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return d.addFileChild(ctx, name, "", f), 0
 	}
 
+	key := filepath.Join(d.path, name)
+
+	if d.rootFS.isNotFound(key) {
+		return nil, syscall.ENOENT
+	}
+
 	d.mu.RLock()
-	metadata, ok := d.keyDir[filepath.Join(d.path, name)]
+	metadata, ok := d.keyDir[key]
 	d.mu.RUnlock()
 	if ok {
-		if metadata.notFound {
-			return nil, syscall.ENOENT
-		}
 		binaryData, err := os.ReadFile(filepath.Join(_cacheDir, metadata.hash))
 		if err == nil {
 			LookupStats.DiskCacheHits.Add(1)
@@ -142,9 +144,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	entry, err := d.getEntryFromFileServer(name)
 	if err != nil {
 		if err == ErrNotFoundOnFileServer {
-			d.mu.Lock()
-			d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{notFound: true}
-			d.mu.Unlock()
+			d.rootFS.addNotFound(key)
 			return nil, syscall.ENOENT
 		}
 		log.Printf("error fetching file data for %s: %v", name, err)

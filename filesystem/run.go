@@ -221,7 +221,7 @@ type RunResponse struct {
 	RunId    int    `json:"run_id"`
 }
 
-func Run(w http.ResponseWriter, r *http.Request) {
+func (fs *FS) Run(w http.ResponseWriter, r *http.Request) {
 	req := RunRequest{}
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
@@ -239,6 +239,8 @@ func Run(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid filename", http.StatusBadRequest)
 		return
 	}
+
+	fs.ClearNotFound()
 
 	// create a per-run bundle directory so concurrent runs don't share config.json
 	bundleDir, err := os.MkdirTemp("", "runc-bundle-*")

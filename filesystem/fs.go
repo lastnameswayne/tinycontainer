@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,9 +18,30 @@ import (
 type FS struct {
 	fusefs.Inode
 
-	root   *Directory
-	path   string
-	client *http.Client
+	root        *Directory
+	path        string
+	client      *http.Client
+	notFoundMu  sync.RWMutex
+	notFoundSet map[string]struct{} // paths known not to exist; cleared at the start of each run. Using this to avoid re-fetches to the fileserver.
+}
+
+func (f *FS) ClearNotFound() {
+	f.notFoundMu.Lock()
+	f.notFoundSet = make(map[string]struct{})
+	f.notFoundMu.Unlock()
+}
+
+func (f *FS) addNotFound(path string) {
+	f.notFoundMu.Lock()
+	f.notFoundSet[path] = struct{}{}
+	f.notFoundMu.Unlock()
+}
+
+func (f *FS) isNotFound(path string) bool {
+	f.notFoundMu.RLock()
+	_, ok := f.notFoundSet[path]
+	f.notFoundMu.RUnlock()
+	return ok
 }
 
 func (r *FS) OnAdd(ctx context.Context) {
@@ -55,7 +77,8 @@ func NewFS(path string) *FS {
 	}
 
 	fs := &FS{
-		path: path,
+		path:        path,
+		notFoundSet: make(map[string]struct{}),
 	}
 	client := &http.Client{
 		Transport: &http.Transport{

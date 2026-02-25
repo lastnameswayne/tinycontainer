@@ -35,9 +35,14 @@ func main() {
 		log.Printf("Warning: failed to initialize database: %v", err)
 	}
 
+	//init root
+	opts.Debug = *debug
+	root := NewFS(flag.Arg(0))
+	root.root = root.newDir("/") // Explicitly set the root directory
+
 	// start up web server
 	handler := http.NewServeMux()
-	handler.HandleFunc("/run", Run)
+	handler.HandleFunc("/run", root.Run)
 	handler.HandleFunc("/run/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "./website/index.html")
 	})
@@ -53,11 +58,6 @@ func main() {
 			log.Printf("HTTP server error: %v", err)
 		}
 	}()
-
-	//init root
-	opts.Debug = *debug
-	root := NewFS(flag.Arg(0))
-	root.root = root.newDir("/") // Explicitly set the root directory
 	server, err := fusefs.Mount(flag.Arg(0), root, opts)
 	if err != nil {
 		log.Fatalf("Mount fail: %v\n", err)
