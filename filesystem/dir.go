@@ -117,9 +117,11 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		f := mapEntryToFile(entry)
 		out.SetEntryTimeout(0)
 		out.SetAttrTimeout(0)
+		df := d.NewInode(ctx, f, fusefs.StableAttr{Ino: 0})
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		return d.addFileChild(ctx, name, "", f), 0
+		d.AddChild(name, df, true) // overwrite=true: always replace stale script inodes
+		return df, 0
 	}
 
 	key := filepath.Join(d.path, name)
