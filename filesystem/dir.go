@@ -148,13 +148,13 @@ func (d *Directory) fromFileServer(ctx context.Context, name, key string, out *f
 
 	f := mapEntryToFile(entry)
 	d.mu.Lock()
-	df := d.addFileChild(ctx, name, entry.HashValue, f)
+	inode := d.addFileChild(ctx, name, entry.HashValue, f)
 	d.mu.Unlock()
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		log.Printf("error writing file to disk cache: %v", err)
 	}
 	setFileEntryOut(out, f.attr.Mode, f.attr.Size)
-	return df, 0
+	return inode, 0
 }
 
 func (d *Directory) Getattr(ctx context.Context, f fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -230,27 +230,27 @@ func (d *Directory) scriptFromFileserver(ctx context.Context, name string, out *
 	out.SetEntryTimeout(0)
 	out.SetAttrTimeout(0)
 
-	df := d.NewInode(ctx, mapEntryToFile(entry), fusefs.StableAttr{Ino: 0})
+	inode := d.NewInode(ctx, mapEntryToFile(entry), fusefs.StableAttr{Ino: 0})
 	d.mu.Lock()
-	d.AddChild(name, df, true) // overwrite=true: always replace stale script inodes
+	d.AddChild(name, inode, true) // overwrite=true: always replace stale script inodes
 	d.mu.Unlock()
-	return df, 0
+	return inode, 0
 }
 
 // addFileChild registers a file inode and updates keyDir. Callers must hold lock exclusively
 // since d.keyDir is modified.
 func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file) *fusefs.Inode {
-	df := d.NewInode(ctx, f, fusefs.StableAttr{Ino: 0})
-	d.AddChild(name, df, false)
+	inode := d.NewInode(ctx, f, fusefs.StableAttr{Ino: 0})
+	d.AddChild(name, inode, false)
 	if hash == "" {
-		return df
+		return inode
 	}
 	d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{
 		hash: hash,
 		size: int64(f.attr.Size),
 		mode: int64(f.attr.Mode),
 	}
-	return df
+	return inode
 }
 
 // addDirChild registers a directory inode. Callers must hold d.mu exclusively
