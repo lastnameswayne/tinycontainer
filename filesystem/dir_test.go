@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 
@@ -14,6 +16,9 @@ import (
 )
 
 func Test_DirectoryReadDir(t *testing.T) {
+	t.Run("lists children from fileserver", func(t *testing.T) {
+
+	})
 	t.Run("lists children when server returns 404", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
@@ -117,6 +122,152 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}
 		assert.Contains(t, names, "utf_8")
 		assert.Contains(t, names, "latin_1")
+	})
+}
+
+func newTestDir(serverURL string) (*Directory, *http.Client) {
+	client := &http.Client{}
+	testFS := &FS{
+		client:      client,
+		notFoundSet: make(map[string]struct{}),
+	}
+	dir := &Directory{
+		path:     "/app",
+		rootFS:   testFS,
+		children: map[string]*Directory{},
+		keyDir:   map[string]cachedMetadata{},
+	}
+	fileserverURL = serverURL
+	return dir, client
+}
+
+func Test_DirectoryLookup(t *testing.T) {
+	t.Run("pyc files return ENOENT without hitting server", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir, _ := newTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		_, errno := dir.Lookup(context.Background(), "something.pyc.123", &fuse.EntryOut{})
+
+		assert.Equal(t, syscall.ENOENT, errno)
+		assert.Equal(t, int64(0), requestCount.Load())
+	})
+
+	t.Run("server 404 returns ENOENT", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir, _ := newTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		_, errno := dir.Lookup(context.Background(), "missing.so", &fuse.EntryOut{})
+
+		assert.Equal(t, syscall.ENOENT, errno)
+	})
+
+	t.Run("not-found is cached: second lookup does not hit server", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir, _ := newTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		ctx := context.Background()
+		dir.Lookup(ctx, "missing.so", &fuse.EntryOut{})
+		dir.Lookup(ctx, "missing.so", &fuse.EntryOut{})
+
+		assert.Equal(t, int64(1), requestCount.Load())
+	})
+
+	t.Run("server error returns EIO", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir, _ := newTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		_, errno := dir.Lookup(context.Background(), "broken.so", &fuse.EntryOut{})
+
+		assert.Equal(t, syscall.EIO, errno)
+	})
+
+	t.Run("memory cache hit returns inode without hitting server", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir, _ := newTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		childDir := &Directory{path: "/app/numpy", rootFS: dir.rootFS, children: map[string]*Directory{}}
+		dir.children["numpy"] = childDir
+
+		before := LookupStats.MemoryCacheHits.Load()
+		inode, errno := dir.Lookup(context.Background(), "numpy", &fuse.EntryOut{})
+
+		assert.Equal(t, syscall.Errno(0), errno)
+		assert.NotNil(t, inode)
+		assert.Equal(t, int64(1), LookupStats.MemoryCacheHits.Load()-before)
+		assert.Equal(t, int64(0), requestCount.Load())
+	})
+
+	t.Run("concurrent lookups: after first round notFoundSet prevents further server hits", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir, _ := newTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		// First round: concurrent lookups all miss, some may race before notFoundSet is populated
+		var wg sync.WaitGroup
+		for range 20 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				dir.Lookup(context.Background(), "missing.so", &fuse.EntryOut{})
+			}()
+		}
+		wg.Wait()
+
+		// After the first round, notFoundSet is populated.
+		// Every subsequent lookup should return ENOENT with zero server hits.
+		countAfterFirstRound := requestCount.Load()
+		for range 20 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, errno := dir.Lookup(context.Background(), "missing.so", &fuse.EntryOut{})
+				assert.Equal(t, syscall.ENOENT, errno)
+			}()
+		}
+		wg.Wait()
+
+		assert.Equal(t, countAfterFirstRound, requestCount.Load(), "second round must not hit server")
 	})
 }
 

@@ -4,9 +4,11 @@ set -e
 trap 'kill $(jobs -p) 2>/dev/null; exit 1' INT TERM
 
 SKIP_EXPORT=false
+CONCURRENT=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-export) SKIP_EXPORT=true; shift ;;
+        --concurrent) CONCURRENT=true; shift ;;
         *) shift ;;
     esac
 done
@@ -65,10 +67,41 @@ run_app() {
 START_TIME=$SECONDS
 log "Starting integration tests..."
 
-run_app "testapp2" "hello world" "Sum: 15" "Mean: 3.0"
-run_app "testapp3" "hello world" "Sum: 15" "Mean: 3.0" "-117.0" "0.0"
-run_app "testappscipy" "scipy test" "matmul: (100, 100)" "svd: u=(100, 100), s=(100,)" "fitted normal: mean="
-run_app "testappplotting" "Sine Wave"
+if [ "$CONCURRENT" = true ]; then
+    log "Running tests concurrently..."
+    pids=()
+    outfiles=()
+
+    spawn() {
+        local dir=$1
+        local tmpfile
+        tmpfile=$(mktemp)
+        outfiles+=("$tmpfile")
+        ( SWAY_USERNAME="integration-tester-$dir" run_app "$@" ) > "$tmpfile" 2>&1 &
+        pids+=($!)
+    }
+
+    spawn "testapp2" "hello world" "Sum: 15" "Mean: 3.0"
+    spawn "testapp3" "hello world" "Sum: 15" "Mean: 3.0" "-117.0" "0.0"
+    spawn "testappscipy" "scipy test" "matmul: (100, 100)" "svd: u=(100, 100), s=(100,)" "fitted normal: mean="
+    spawn "testappplotting" "Sine Wave"
+
+    failed=false
+    for i in "${!pids[@]}"; do
+        if ! wait "${pids[$i]}"; then
+            failed=true
+        fi
+        cat "${outfiles[$i]}"
+        rm -f "${outfiles[$i]}"
+    done
+
+    [ "$failed" = false ] || exit 1
+else
+    run_app "testapp2" "hello world" "Sum: 15" "Mean: 3.0"
+    run_app "testapp3" "hello world" "Sum: 15" "Mean: 3.0" "-117.0" "0.0"
+    run_app "testappscipy" "scipy test" "matmul: (100, 100)" "svd: u=(100, 100), s=(100,)" "fitted normal: mean="
+    run_app "testappplotting" "Sine Wave"
+fi
 
 ELAPSED=$(( SECONDS - START_TIME ))
 MINS=$(( ELAPSED / 60 ))

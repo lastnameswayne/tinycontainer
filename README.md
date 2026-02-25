@@ -54,6 +54,10 @@ sway run app.py # runs the script
 - `sway export` reads the docker file and sends all the required files to the fileserver. Run this when you add a new dependency. It might take a few minutes...
 - `sway run <path_to_script>` runs the script in the cloud and retuns the result. 
 
+## Assumptions
+
+- Each user runs at most one script at a time.
+
 ## Architecture
 
 Cold start latency should be bounded by the files a process actually touches, not by total image size. A scipy image is ~1.5GB. `import scipy; scipy.linalg.svd(...)` touches maybe 50MB of that. By mounting a FUSE filesystem as the container rootfs and fetching lazily, the container starts in seconds instead of waiting for a full image pull.
