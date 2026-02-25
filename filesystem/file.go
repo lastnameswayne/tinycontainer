@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 	"syscall"
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
@@ -14,9 +15,11 @@ import (
 // file represents a file in the filesystem
 type file struct {
 	fusefs.Inode
-	Data []byte
-	attr fuse.Attr
-	path string
+	Data     []byte
+	attr     fuse.Attr
+	path     string
+	loadOnce sync.Once
+	loadErr  syscall.Errno
 }
 
 var _ = (fusefs.NodeReader)((*file)(nil))
@@ -46,20 +49,26 @@ func (f *file) Getattr(ctx context.Context, fh fusefs.FileHandle, out *fuse.Attr
 }
 
 func (f *file) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
-	if f.Data != nil {
-		return f, uint32(0), 0
-	}
+	f.loadOnce.Do(func() {
+		if f.Data != nil {
+			return // pre-populated at construction time, nothing to load
+		}
+		reader, err := os.Open(f.path)
+		if err != nil {
+			f.loadErr = syscall.EIO
+			return
+		}
+		defer reader.Close()
+		content, err := io.ReadAll(reader)
+		if err != nil {
+			f.loadErr = syscall.EIO
+			return
+		}
+		f.Data = content
+	})
 
-	reader, err := os.Open(f.path)
-	if err != nil {
-		return nil, 0, syscall.EIO
+	if f.loadErr != 0 {
+		return nil, 0, f.loadErr
 	}
-	defer reader.Close()
-	content, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, 0, syscall.EIO
-	}
-	f.Data = content
-
 	return f, uint32(0), 0
 }

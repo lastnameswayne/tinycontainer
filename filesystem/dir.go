@@ -162,8 +162,8 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	f := mapEntryToFile(entry)
 
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	df := d.addFileChild(ctx, name, entry.HashValue, f)
-	d.mu.Unlock()
 
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		log.Printf("error writing file to disk cache: %v", err)
