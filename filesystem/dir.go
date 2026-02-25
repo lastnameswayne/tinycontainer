@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -41,30 +39,46 @@ const _kernelInodeTimeout = 5 * time.Minute
 
 // Readdir lists the contents of the directory
 func (d *Directory) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno) {
+	// in-memory directories
 	d.mu.RLock()
-	entries := make(map[string]fuse.DirEntry)
+	memEntries := make([]fuse.DirEntry, 0, len(d.children))
 	for name, childDir := range d.children {
-		entry := fuse.DirEntry{
-			Name: name,
-			Mode: fuse.S_IFDIR,
-			Ino:  childDir.StableAttr().Ino,
-		}
-		entries[entry.Name] = entry
+		memEntries = append(memEntries, fuse.DirEntry{Name: name, Mode: fuse.S_IFDIR, Ino: childDir.StableAttr().Ino})
 	}
 	d.mu.RUnlock()
 
-	fileEntries, err := d.getContentsFromFileServer()
+	// directories from the fileserver
+	serverEntries, err := d.fetchServerEntries(ctx)
 	if err != nil {
-		// Fallback to d.children.
 		log.Printf("error getting directory contents: %v", err)
-		return dirEntriesToStream(entries), 0
+		return fusefs.NewListDirStream(memEntries), 0
 	}
 
-	d.mu.Lock()
-	for _, entry := range fileEntries {
-		if _, ok := entries[entry.Name]; ok {
-			continue
+	// deduplicate: keep server entries not already in memory
+	seen := make(map[string]struct{}, len(memEntries))
+	for _, e := range memEntries {
+		seen[e.Name] = struct{}{}
+	}
+	all := memEntries
+	for _, e := range serverEntries {
+		if _, ok := seen[e.Name]; !ok {
+			all = append(all, e)
 		}
+	}
+	return fusefs.NewListDirStream(all), 0
+}
+
+// fetchServerEntries fetches directory entries from the fileserver and registers
+// them as children. Acquires d.mu exclusively for the duration of child registration.
+func (d *Directory) fetchServerEntries(ctx context.Context) ([]fuse.DirEntry, error) {
+	fileEntries, err := d.getContentsFromFileServer()
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]fuse.DirEntry, 0, len(fileEntries))
+	for _, entry := range fileEntries {
 		if entry.IsDir {
 			d.addDirChild(ctx, entry.Name)
 		} else {
@@ -74,21 +88,9 @@ func (d *Directory) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errn
 			}
 			d.addFileChild(ctx, entry.Name, entry.HashValue, f)
 		}
-
-		fuseEntry := fuse.DirEntry{
-			Name: entry.Name,
-			Mode: uint32(entry.Mode),
-			Ino:  0,
-		}
-		entries[fuseEntry.Name] = fuseEntry
+		out = append(out, fuse.DirEntry{Name: entry.Name, Mode: uint32(entry.Mode)})
 	}
-	d.mu.Unlock()
-
-	return dirEntriesToStream(entries), 0
-}
-
-func dirEntriesToStream(entries map[string]fuse.DirEntry) fusefs.DirStream {
-	return fusefs.NewListDirStream(slices.Collect(maps.Values(entries)))
+	return out, nil
 }
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
@@ -124,6 +126,9 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	return d.fromFileServer(ctx, name, key, out)
 }
 
+// fromFileServer fetches a single entry from the fileserver and registers it as a child.
+// For directories: acquires d.mu exclusively via defer.
+// For files: acquires d.mu exclusively only for child registration; WriteFile runs outside the lock.
 func (d *Directory) fromFileServer(ctx context.Context, name, key string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
 	entry, err := d.getEntryFromFileServer(name)
 	if err == ErrNotFoundOnFileServer {
@@ -191,6 +196,8 @@ func setFileEntryOut(out *fuse.EntryOut, mode uint32, size uint64) {
 	out.SetAttrTimeout(_kernelInodeTimeout)
 }
 
+// fromDiskCache checks keyDir (under RLock), reads the file from disk without holding
+// any lock, then registers the child (under exclusive lock).
 func (d *Directory) fromDiskCache(ctx context.Context, name, key string, out *fuse.EntryOut) (*fusefs.Inode, bool) {
 	d.mu.RLock()
 	metadata, ok := d.keyDir[key]
@@ -204,20 +211,25 @@ func (d *Directory) fromDiskCache(ctx context.Context, name, key string, out *fu
 	}
 	LookupStats.DiskCacheHits.Add(1)
 	d.mu.Lock()
-	inode := d.addFileChild(ctx, name, "", mapCachedEntryToFile(metadata, binaryData))
+	inode := d.NewInode(ctx, mapCachedEntryToFile(metadata, binaryData), fusefs.StableAttr{Ino: 0})
+	d.AddChild(name, inode, false)
 	d.mu.Unlock()
 	setFileEntryOut(out, uint32(metadata.mode), uint64(metadata.size))
 	return inode, true
 }
 
+// scriptFromFileserver fetches the script from the server with zero entry/attr timeouts
+// so the kernel never caches it. Acquires d.mu exclusively to register the child with overwrite=true.
 func (d *Directory) scriptFromFileserver(ctx context.Context, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
 	entry, err := d.getEntryFromFileServer(name)
 	if err != nil {
 		return nil, syscall.EIO
 	}
+
 	LookupStats.ServerFetches.Add(1)
 	out.SetEntryTimeout(0)
 	out.SetAttrTimeout(0)
+
 	df := d.NewInode(ctx, mapEntryToFile(entry), fusefs.StableAttr{Ino: 0})
 	d.mu.Lock()
 	d.AddChild(name, df, true) // overwrite=true: always replace stale script inodes
@@ -225,19 +237,24 @@ func (d *Directory) scriptFromFileserver(ctx context.Context, name string, out *
 	return df, 0
 }
 
+// addFileChild registers a file inode and updates keyDir. Callers must hold lock exclusively
+// since d.keyDir is modified.
 func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file) *fusefs.Inode {
 	df := d.NewInode(ctx, f, fusefs.StableAttr{Ino: 0})
 	d.AddChild(name, df, false)
-	if hash != "" {
-		d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{
-			hash: hash,
-			size: int64(f.attr.Size),
-			mode: int64(f.attr.Mode),
-		}
+	if hash == "" {
+		return df
+	}
+	d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{
+		hash: hash,
+		size: int64(f.attr.Size),
+		mode: int64(f.attr.Mode),
 	}
 	return df
 }
 
+// addDirChild registers a directory inode. Callers must hold d.mu exclusively
+// since d.children is modified.
 func (d *Directory) addDirChild(ctx context.Context, name string) *fusefs.Inode {
 	if dir, ok := d.children[name]; ok {
 		return &dir.Inode
