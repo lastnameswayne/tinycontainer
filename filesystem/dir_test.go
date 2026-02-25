@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -17,7 +20,32 @@ import (
 
 func Test_DirectoryReadDir(t *testing.T) {
 	t.Run("lists children from fileserver", func(t *testing.T) {
+		serverEntries := []KeyValue{
+			{Name: "numpy", IsDir: true, Mode: 0755},
+			{Name: "requests.py", IsDir: false, Mode: 0644, Size: 1234, HashValue: "abc123"},
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(serverEntries)
+		}))
+		defer server.Close()
 
+		oldURL := fileserverURL
+		dir := newFUSEBridgedTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		stream, errno := dir.Readdir(context.Background())
+		require.Equal(t, syscall.Errno(0), errno)
+
+		entries := collectEntries(t, stream)
+		require.Len(t, entries, 2)
+
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name)
+		}
+		assert.Contains(t, names, "numpy")
+		assert.Contains(t, names, "requests.py")
 	})
 	t.Run("lists children when server returns 404", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -125,23 +153,8 @@ func Test_DirectoryReadDir(t *testing.T) {
 	})
 }
 
-func newTestDir(serverURL string) (*Directory, *http.Client) {
-	client := &http.Client{}
-	testFS := &FS{
-		client:      client,
-		notFoundSet: make(map[string]struct{}),
-	}
-	dir := &Directory{
-		path:     "/app",
-		rootFS:   testFS,
-		children: map[string]*Directory{},
-		keyDir:   map[string]cachedMetadata{},
-	}
-	fileserverURL = serverURL
-	return dir, client
-}
-
 func Test_DirectoryLookup(t *testing.T) {
+
 	t.Run("pyc files return ENOENT without hitting server", func(t *testing.T) {
 		var requestCount atomic.Int64
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +219,65 @@ func Test_DirectoryLookup(t *testing.T) {
 		_, errno := dir.Lookup(context.Background(), "broken.so", &fuse.EntryOut{})
 
 		assert.Equal(t, syscall.EIO, errno)
+	})
+
+	t.Run("disk cache hit returns inode without hitting server", func(t *testing.T) {
+		var requestCount atomic.Int64
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount.Add(1)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir := newFUSEBridgedTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+
+		hash := "diskcachehit123"
+		content := []byte("test file content")
+		require.NoError(t, os.MkdirAll(_cacheDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(_cacheDir, hash), content, 0644))
+		t.Cleanup(func() { os.Remove(filepath.Join(_cacheDir, hash)) })
+
+		dir.keyDir[filepath.Join(dir.path, "numpy.so")] = cachedMetadata{
+			hash: hash,
+			size: int64(len(content)),
+			mode: 0644,
+		}
+
+		before := LookupStats.DiskCacheHits.Load()
+		inode, errno := dir.Lookup(context.Background(), "numpy.so", &fuse.EntryOut{})
+
+		assert.Equal(t, syscall.Errno(0), errno)
+		assert.NotNil(t, inode)
+		assert.Equal(t, int64(1), LookupStats.DiskCacheHits.Load()-before)
+		assert.Equal(t, int64(0), requestCount.Load())
+	})
+
+	t.Run("server fetch returns inode and increments counter", func(t *testing.T) {
+		entry := KeyValue{
+			Name:      "numpy.so",
+			HashValue: "serverfetch456",
+			Size:      12,
+			Mode:      0644,
+			Value:     []byte("hello world\n"),
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(entry)
+		}))
+		defer server.Close()
+
+		oldURL := fileserverURL
+		dir := newFUSEBridgedTestDir(server.URL)
+		defer func() { fileserverURL = oldURL }()
+		t.Cleanup(func() { os.Remove(filepath.Join(_cacheDir, entry.HashValue)) })
+
+		before := LookupStats.ServerFetches.Load()
+		inode, errno := dir.Lookup(context.Background(), "numpy.so", &fuse.EntryOut{})
+
+		assert.Equal(t, syscall.Errno(0), errno)
+		assert.NotNil(t, inode)
+		assert.Equal(t, int64(1), LookupStats.ServerFetches.Load()-before)
 	})
 
 	t.Run("memory cache hit returns inode without hitting server", func(t *testing.T) {
@@ -281,4 +353,28 @@ func collectEntries(t *testing.T, stream fusefs.DirStream) []fuse.DirEntry {
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// newFUSEBridgedTestDir is like newTestDir but initializes the FUSE inode bridge,
+// allowing NewInode/NewPersistentInode calls without a real FUSE mount.
+func newFUSEBridgedTestDir(serverURL string) *Directory {
+	dir, _ := newTestDir(serverURL)
+	fusefs.NewNodeFS(dir, &fusefs.Options{FirstAutomaticIno: 1})
+	return dir
+}
+
+func newTestDir(serverURL string) (*Directory, *http.Client) {
+	client := &http.Client{}
+	testFS := &FS{
+		client:      client,
+		notFoundSet: make(map[string]struct{}),
+	}
+	dir := &Directory{
+		path:     "/app",
+		rootFS:   testFS,
+		children: map[string]*Directory{},
+		keyDir:   map[string]cachedMetadata{},
+	}
+	fileserverURL = serverURL
+	return dir, client
 }
