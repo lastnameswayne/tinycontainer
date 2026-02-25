@@ -6,6 +6,6 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir numpy scikit-learn
 
-COPY app.py .
+COPY script.py .
 
-CMD ["python", "app.py"]
+CMD ["python", "script.py"]

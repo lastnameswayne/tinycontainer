@@ -112,17 +112,17 @@ func run(scriptPath, username string) error {
 		return fmt.Errorf("script execution failed with exit code %d", response.ExitCode)
 	}
 
-	if response.RunId > 0 {
-		fmt.Printf("%s Container execution complete. View run at %s/run/%d\n", green("✓"), workerURL, response.RunId)
-	} else {
-		fmt.Printf("%s Container execution complete\n", green("✓"))
-	}
+	fmt.Printf("%s Container execution complete\n", green("✓"))
 
 	if response.Stdout != "" {
 		fmt.Printf("\n%s\n", response.Stdout)
 	}
 	if response.Stderr != "" {
 		fmt.Printf("\n%s\n", response.Stderr)
+	}
+
+	if response.RunId > 0 {
+		fmt.Printf("\nView run at %s/run/%d\n", workerURL, response.RunId)
 	}
 
 	return nil

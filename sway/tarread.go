@@ -12,9 +12,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
-
 	"path/filepath"
+	"strings"
 )
 
 // Verbose controls logging output
@@ -34,16 +33,17 @@ func logln(args ...any) {
 
 // KeyValue represents the JSON structure for set requests
 type KeyValue struct {
-	Key     string `json:"key"`      // Full path
-	Value   []byte `json:"value"`    // Base64 encoded binary data
-	Parent  string `json:"parent"`   // Parent directory path
-	Name    string `json:"name"`     // Basename
-	IsDir   bool   `json:"is_dir"`   // True if directory
-	Size    int64  `json:"size"`     // File size in bytes
-	Mode    int64  `json:"mode"`     // File permissions
-	ModTime int64  `json:"mod_time"` // Last modified timestamp
-	Uid     int    `json:"uid"`      // Owner user ID
-	Gid     int    `json:"gid"`      // Owner group ID
+	Key       string `json:"key"`
+	Value     []byte `json:"value"`
+	Parent    string `json:"parent"`
+	Name      string `json:"name"`
+	IsDir     bool   `json:"is_dir"`
+	Size      int64  `json:"size"`
+	Mode      int64  `json:"mode"`
+	ModTime   int64  `json:"mod_time"`
+	Uid       int    `json:"uid"`
+	Gid       int    `json:"gid"`
+	LocalPath string `json:"-"` // on-disk path; content is loaded lazily on upload to not OOM the client.
 }
 
 type Symlink struct {
@@ -62,13 +62,25 @@ type SyncResponse struct {
 	NeedUpload []string `json:"need_upload"`
 }
 
-// computeHash computes SHA1 hash matching server's algorithm
+// computeHash computes SHA1 hash matching server's algorithm.
+// We use the hash to figure out which of the file's the file server already has.
+// If LocalPath is set, reads content from disk; otherwise uses Value.
 func computeHash(kv KeyValue) string {
 	h := sha1.New()
 	if kv.IsDir {
 		h.Write([]byte(kv.Key))
+		return hex.EncodeToString(h.Sum(nil))
 	}
-	h.Write(kv.Value)
+	if kv.LocalPath != "" {
+		f, err := os.Open(kv.LocalPath)
+		if err != nil {
+			return ""
+		}
+		defer f.Close()
+		io.Copy(h, f)
+	} else {
+		h.Write(kv.Value)
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -76,49 +88,50 @@ func computeHash(kv KeyValue) string {
 type ProgressFunc func(sent, total int)
 
 // extractImage extracts a docker image tarball into a list of files to upload.
-func extractImage(tarfile string) ([]KeyValue, error) {
+// The caller must call os.RemoveAll on the returned tempDir when done.
+func extractImage(tarfile string) ([]KeyValue, string, error) {
 	tempDir, err := os.MkdirTemp("", "image-extract-")
 	if err != nil {
-		return nil, fmt.Errorf("create temp dir: %w", err)
+		return nil, "", fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
 
 	tarFile, err := os.Open(tarfile)
 	if err != nil {
-		return nil, fmt.Errorf("open tarfile: %w", err)
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("open tarfile: %w", err)
 	}
 	readLayer(tarFile, tempDir)
 
-	result, err := tarFileToEntries(tarfile)
+	// manifest.json was extracted to tempDir by readLayer above
+	manifestData, err := os.ReadFile(filepath.Join(tempDir, "manifest.json"))
 	if err != nil {
-		return nil, fmt.Errorf("read tar entries: %w", err)
-	}
-	var manifest KeyValue
-	for _, e := range result {
-		if strings.Contains(e.Key, "manifest.json") {
-			manifest = e
-		}
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("read manifest: %w", err)
 	}
 
 	var manifests []Manifest
-	if err := json.Unmarshal(manifest.Value, &manifests); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal manifest: %w", err)
+	if err := json.Unmarshal(manifestData, &manifests); err != nil {
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("cannot unmarshal manifest: %w", err)
 	}
 	if len(manifests) == 0 {
-		return nil, fmt.Errorf("empty manifest.json in tarball")
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("empty manifest.json in tarball")
 	}
 
 	logln(manifests[0].Layers)
-	rootfsDir := "/tmp/rootfs"
+	rootfsDir := filepath.Join(tempDir, "rootfs")
 	if err := os.MkdirAll(rootfsDir, 0755); err != nil {
-		return nil, fmt.Errorf("create rootfs dir: %w", err)
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("create rootfs dir: %w", err)
 	}
 
 	allSymlinks := []Symlink{}
 	for _, layer := range manifests[0].Layers {
 		f, err := os.Open(filepath.Join(tempDir, layer))
 		if err != nil {
-			return nil, fmt.Errorf("open layer %s: %w", layer, err)
+			os.RemoveAll(tempDir)
+			return nil, "", fmt.Errorf("open layer %s: %w", layer, err)
 		}
 
 		logln("layer", f.Name(), layer)
@@ -131,26 +144,23 @@ func extractImage(tarfile string) ([]KeyValue, error) {
 		}
 	}
 
-	finalTar := filepath.Join(tempDir, "final.tar")
-	if err := createTarFromDir(rootfsDir, finalTar); err != nil {
-		return nil, fmt.Errorf("create final tar: %w", err)
-	}
-
-	result, err = tarFileToEntries(finalTar)
+	result, err := walkDirToEntries(rootfsDir)
 	if err != nil {
-		return nil, fmt.Errorf("read final tar entries: %w", err)
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("walk rootfs: %w", err)
 	}
 
 	symlinkEntries, err := buildSymlinkEntries(rootfsDir, allSymlinks)
 	if err != nil {
-		return nil, fmt.Errorf("build symlink entries: %w", err)
+		os.RemoveAll(tempDir)
+		return nil, "", fmt.Errorf("build symlink entries: %w", err)
 	}
 
 	result = append(result, symlinkEntries...)
 
 	filteredResult := []KeyValue{}
 	for _, file := range result {
-		if len(file.Value) == 0 && !file.IsDir {
+		if !file.IsDir && file.LocalPath == "" {
 			continue
 		}
 
@@ -164,13 +174,52 @@ func extractImage(tarfile string) ([]KeyValue, error) {
 		}
 
 		if strings.Contains(file.Key, "libstdc++") {
-			logln("file", file.Key, len(file.Value), file.Size, file.Parent)
+			logln("file", file.Key, file.Size, file.Parent)
 		}
 
 		filteredResult = append(filteredResult, file)
 	}
 
-	return filteredResult, nil
+	return filteredResult, tempDir, nil
+}
+
+// walkDirToEntries walks a directory and returns KeyValues with LocalPath set.
+// No file content is loaded into memory.
+func walkDirToEntries(dir string) ([]KeyValue, error) {
+	result := []KeyValue{}
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if relPath == "." {
+			return nil
+		}
+
+		// skip Docker whiteout files
+		if strings.HasPrefix(filepath.Base(relPath), ".wh.") {
+			return nil
+		}
+
+		kv := KeyValue{
+			Key:     filepath.Clean(relPath),
+			Name:    filepath.Base(relPath),
+			Parent:  filepath.Dir(relPath),
+			IsDir:   info.IsDir(),
+			Size:    info.Size(),
+			Mode:    int64(info.Mode().Perm()),
+			ModTime: info.ModTime().Unix(),
+		}
+		if !info.IsDir() {
+			kv.LocalPath = path
+		}
+		result = append(result, kv)
+		return nil
+	})
+	return result, err
 }
 
 // syncNewFiles syncs with the server and returns only the files that need uploading.
@@ -206,53 +255,6 @@ func uploadFiles(files []KeyValue, url string, onProgress ProgressFunc) {
 	}
 }
 
-func tarFileToEntries(path string) ([]KeyValue, error) {
-	result := make([]KeyValue, 0)
-
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	reader := tar.NewReader(f)
-	for {
-		header, err := reader.Next()
-		if err == io.EOF {
-			logln("END OF FILE")
-			break
-		}
-		if err != nil {
-			log.Printf("err %v", err)
-			break
-		}
-
-		buf := bytes.NewBuffer(make([]byte, 0, header.Size))
-		io.Copy(buf, reader)
-		filepathStr := filepath.Clean(header.Name)
-
-		isDir := header.Typeflag == tar.TypeDir
-		content := []byte{}
-		if !isDir {
-			content = buf.Bytes()
-		}
-		kv := KeyValue{
-			Key:     filepathStr,
-			Value:   content,
-			Name:    filepath.Base(header.Name),
-			Parent:  filepath.Dir(header.Name),
-			IsDir:   isDir,
-			Size:    header.Size,
-			Mode:    header.Mode,
-			ModTime: header.ModTime.Unix(),
-			Uid:     header.Uid,
-			Gid:     header.Gid,
-		}
-		result = append(result, kv)
-	}
-
-	return result, nil
-}
-
 func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 	symlinks := []Symlink{}
 	reader := tar.NewReader(f)
@@ -264,7 +266,6 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error reading tar: %v", err)
-
 		}
 
 		target := filepath.Join(dstDir, header.Name)
@@ -273,7 +274,6 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
 				return nil, fmt.Errorf("mkdir error: %v", err)
-
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
@@ -283,7 +283,6 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 			outf, err := os.Create(target)
 			if err != nil {
 				return nil, fmt.Errorf("create file error: %v", err)
-
 			}
 
 			if _, err := io.Copy(outf, reader); err != nil {
@@ -299,8 +298,8 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 			}
 			outf.Close()
 		case tar.TypeSymlink, tar.TypeLink:
-			name := filepath.Clean(header.Name) // normalize
-			link := header.Linkname             // keep raw; resolve later with name context
+			name := filepath.Clean(header.Name)
+			link := header.Linkname
 			base := filepath.Base(name)
 
 			if strings.Contains(base, "libstdc++") {
@@ -316,11 +315,9 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 		}
 	}
 	return symlinks, nil
-
 }
 
 func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, error) {
-	// create a map from the symlink name to the real file name
 	symlinkMap := map[string]string{}
 	for _, symlink := range symlinks {
 		symlinkMap[filepath.Clean(symlink.Name)] = symlink.Linkname
@@ -328,8 +325,6 @@ func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, erro
 
 	out := []KeyValue{}
 	for _, symlink := range symlinks {
-		// recursively look up in symlink map until you find the leaf
-
 		resolvedName := filepath.Clean(symlink.Name)
 		for {
 			innerName, ok := symlinkMap[resolvedName]
@@ -361,71 +356,18 @@ func buildSymlinkEntries(rootfsDir string, symlinks []Symlink) ([]KeyValue, erro
 			continue
 		}
 
-		file, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-
 		out = append(out, KeyValue{
-			Key:     symlink.Name,
-			Value:   file,
-			Name:    filepath.Base(symlink.Name),
-			Parent:  filepath.Dir(symlink.Name),
-			Size:    stat.Size(),
-			Mode:    int64(stat.Mode().Perm()),
-			ModTime: stat.ModTime().Unix(),
+			Key:       symlink.Name,
+			LocalPath: path,
+			Name:      filepath.Base(symlink.Name),
+			Parent:    filepath.Dir(symlink.Name),
+			Size:      stat.Size(),
+			Mode:      int64(stat.Mode().Perm()),
+			ModTime:   stat.ModTime().Unix(),
 		})
 	}
 
 	return out, nil
-}
-
-func createTarFromDir(dir string, out string) error {
-	outFile, err := os.Create(out)
-	if err != nil {
-		return err
-	}
-	tw := tar.NewWriter(outFile)
-	defer tw.Close()
-
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-		if relPath == "." {
-			return nil
-		}
-
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-
-		header.Name = relPath
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-
-		if !info.IsDir() {
-			f, err := os.Open(path)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(tw, f); err != nil {
-				f.Close()
-				return err
-			}
-			f.Close()
-		}
-
-		return nil
-	})
-
 }
 
 type Manifest struct {
@@ -434,7 +376,7 @@ type Manifest struct {
 	Layers   []string `json:"Layers"`
 }
 
-// SyncFiles sends file hashes to server and returns set of keys that need uploading
+// syncFiles sends file hashes to server and returns set of keys that need uploading
 func syncFiles(files []KeyValue, url string) map[string]struct{} {
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -444,7 +386,6 @@ func syncFiles(files []KeyValue, url string) map[string]struct{} {
 		},
 	}
 
-	// Build sync entries with hashes
 	entries := make([]SyncEntry, len(files))
 	for i, f := range files {
 		entries[i] = SyncEntry{
@@ -477,7 +418,6 @@ func syncFiles(files []KeyValue, url string) map[string]struct{} {
 		log.Fatalf("Error decoding sync response (status %d): %v\nbody: %s", resp.StatusCode, err, string(body))
 	}
 
-	// Convert to set for O(1) lookup
 	needUpload := make(map[string]struct{}, len(syncResp.NeedUpload))
 	for _, key := range syncResp.NeedUpload {
 		needUpload[key] = struct{}{}
@@ -496,7 +436,21 @@ func sendFileBatch(files []KeyValue, url string) {
 		},
 	}
 
-	batchFiles, err := json.Marshal(files)
+	// Load content from disk for files with a LocalPath (deferred from extraction)
+	loaded := make([]KeyValue, 0, len(files))
+	for _, f := range files {
+		if f.LocalPath != "" && !f.IsDir {
+			content, err := os.ReadFile(f.LocalPath)
+			if err != nil {
+				log.Printf("Warning: could not read %s: %v", f.LocalPath, err)
+				continue
+			}
+			f.Value = content
+		}
+		loaded = append(loaded, f)
+	}
+
+	batchFiles, err := json.Marshal(loaded)
 	if err != nil {
 		log.Fatalf("Error marshalling batch files: %v", err)
 	}
