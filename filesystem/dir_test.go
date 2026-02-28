@@ -30,9 +30,7 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir := newFUSEBridgedTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		stream, errno := dir.Readdir(context.Background())
 		require.Equal(t, syscall.Errno(0), errno)
@@ -53,12 +51,9 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
-		fileserverURL = server.URL
-		defer func() { fileserverURL = oldURL }()
-
 		testFS := &FS{
-			client: server.Client(),
+			client:        server.Client(),
+			fileserverURL: server.URL,
 		}
 
 		parentDir := &Directory{
@@ -92,11 +87,7 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
-		fileserverURL = server.URL
-		defer func() { fileserverURL = oldURL }()
-
-		testFS := &FS{client: server.Client()}
+		testFS := &FS{client: server.Client(), fileserverURL: server.URL}
 
 		emptyDir := &Directory{
 			path:     "/empty",
@@ -118,11 +109,7 @@ func Test_DirectoryReadDir(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
-		fileserverURL = server.URL
-		defer func() { fileserverURL = oldURL }()
-
-		testFS := &FS{client: server.Client()}
+		testFS := &FS{client: server.Client(), fileserverURL: server.URL}
 
 		dir := &Directory{
 			path:     "/encodings",
@@ -162,9 +149,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir, _ := newTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		_, errno := dir.Lookup(context.Background(), "something.pyc.123", &fuse.EntryOut{})
 
@@ -178,9 +163,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir, _ := newTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		_, errno := dir.Lookup(context.Background(), "missing.so", &fuse.EntryOut{})
 
@@ -195,9 +178,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir, _ := newTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		ctx := context.Background()
 		dir.Lookup(ctx, "missing.so", &fuse.EntryOut{})
@@ -212,9 +193,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir, _ := newTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		_, errno := dir.Lookup(context.Background(), "broken.so", &fuse.EntryOut{})
 
@@ -228,9 +207,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir := newFUSEBridgedTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		hash := "diskcachehit123"
 		content := []byte("test file content")
@@ -267,9 +244,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir := newFUSEBridgedTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 		t.Cleanup(func() { os.Remove(filepath.Join(_cacheDir, entry.HashValue)) })
 
 		before := LookupStats.ServerFetches.Load()
@@ -287,9 +262,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir, _ := newTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		childDir := &Directory{path: "/app/numpy", rootFS: dir.rootFS, children: map[string]*Directory{}}
 		dir.children["numpy"] = childDir
@@ -311,9 +284,7 @@ func Test_DirectoryLookup(t *testing.T) {
 		}))
 		defer server.Close()
 
-		oldURL := fileserverURL
 		dir, _ := newTestDir(server.URL)
-		defer func() { fileserverURL = oldURL }()
 
 		// First round: concurrent lookups all miss, some may race before notFoundSet is populated
 		var wg sync.WaitGroup
@@ -366,8 +337,9 @@ func newFUSEBridgedTestDir(serverURL string) *Directory {
 func newTestDir(serverURL string) (*Directory, *http.Client) {
 	client := &http.Client{}
 	testFS := &FS{
-		client:      client,
-		notFoundSet: make(map[string]struct{}),
+		client:        client,
+		fileserverURL: serverURL,
+		notFoundSet:   make(map[string]struct{}),
 	}
 	dir := &Directory{
 		path:     "/app",
@@ -375,6 +347,5 @@ func newTestDir(serverURL string) (*Directory, *http.Client) {
 		children: map[string]*Directory{},
 		keyDir:   map[string]cachedMetadata{},
 	}
-	fileserverURL = serverURL
 	return dir, client
 }

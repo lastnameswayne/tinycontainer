@@ -18,11 +18,12 @@ import (
 type FS struct {
 	fusefs.Inode
 
-	root        *Directory
-	path        string
-	client      *http.Client
-	notFoundMu  sync.RWMutex
-	notFoundSet map[string]struct{} // paths known not to exist; cleared at the start of each run. Using this to avoid re-fetches to the fileserver.
+	root           *Directory
+	path           string
+	client         *http.Client
+	fileserverURL  string
+	notFoundMu     sync.RWMutex
+	notFoundSet    map[string]struct{} // paths known not to exist; cleared at the start of each run. Using this to avoid re-fetches to the fileserver.
 }
 
 func (f *FS) ClearNotFound() {
@@ -77,8 +78,9 @@ func NewFS(path string) *FS {
 	}
 
 	fs := &FS{
-		path:        path,
-		notFoundSet: make(map[string]struct{}),
+		path:          path,
+		fileserverURL: getFileserverURL(),
+		notFoundSet:   make(map[string]struct{}),
 	}
 	client := &http.Client{
 		Transport: &http.Transport{

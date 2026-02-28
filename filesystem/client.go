@@ -11,8 +11,6 @@ import (
 
 const _defaultFileserverURL = "https://46.101.149.241:8443"
 
-var fileserverURL = getFileserverURL()
-
 func getFileserverURL() string {
 	if v := os.Getenv("FILESERVER_URL"); v != "" {
 		return v
@@ -34,7 +32,7 @@ type listEntry struct {
 
 // getContentsFromFileServer only gets the filenames and metadata - not the actual binary value of the files in the directory.
 func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
-	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", fileserverURL, url.QueryEscape(d.path))
+	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s/", d.rootFS.fileserverURL, url.QueryEscape(d.path))
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -77,7 +75,7 @@ func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
 
 func (d *Directory) getEntryFromFileServer(name string) (KeyValue, error) {
 	path := d.path
-	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", fileserverURL, url.QueryEscape(path+"/"+name))
+	requestUrl := fmt.Sprintf("%s/fetch?filepath=%s", d.rootFS.fileserverURL, url.QueryEscape(path+"/"+name))
 	log.Printf("fetching %s", requestUrl)
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
