@@ -2,7 +2,7 @@
 
 A container runtime built around lazy-loading container filesystems via FUSE. Built to understand the infrastructure that makes Modal work. This is just for fun.
 
-<video src="https://github.com/lastnameswayne/tinycontainer/releases/download/v1.0.0/fusefilesystemwtext.mp4" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/ca373cbf-31d3-4bb1-ab38-697567fdd409" width="100%" controls autoplay loop muted></video>
 
 View recent runs at http://167.71.54.99:8444/
 
