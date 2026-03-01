@@ -2,6 +2,8 @@
 
 A container runtime built around lazy-loading container filesystems via FUSE. Built to understand the infrastructure that makes Modal work. This is just for fun.
 
+https://github.com/lastnameswayne/tinycontainer/releases/download/v1.0.0/fusefilesystemwtext.mp4
+
 View recent runs at http://167.71.54.99:8444/
 
 ## Quick start example
@@ -42,7 +44,7 @@ curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download
 sudo mv sway /usr/local/bin/
 ```
 
-Or with Go installed: `go install github.com/lastnameswayne/tinycontainer/sway@latest`
+**Or with Go installed: `go install github.com/lastnameswayne/tinycontainer/sway@latest`**
 
 3. Run your python file in the cloud
 
