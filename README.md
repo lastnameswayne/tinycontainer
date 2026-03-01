@@ -1,6 +1,6 @@
-# tinycontainerruntime
+# tiny container runtime
 
-A container runtime built around lazy-loading container filesystems via FUSE. Built to understand the infrastructure that makes Modal work. This is just for fun.
+A container runtime built around lazy-loading container filesystems via FUSE. Built to understand the infrastructure behind Modal. This is just for fun.
 
 <video src="https://github.com/user-attachments/assets/ca373cbf-31d3-4bb1-ab38-697567fdd409" width="100%" controls autoplay loop muted></video>
 
@@ -79,17 +79,18 @@ Cold start latency should be bounded by the files a process actually touches, no
                               └──────────────────────────────────┘
 ```
 
-**Fileserver** -- content-addressed blob store. Files keyed by SHA1. `sway export` populates it. After that it just serves fetches.
+**Fileserver**: content-addressed blob store. Files keyed by SHA1. `sway export` populates it. After that it just serves fetches.
 
-**Worker** -- mounts a FUSE filesystem (`go-fuse`) as the container rootfs, then runs containers via `runc`. When the container process touches a file, FUSE checks memory cache, then disk cache, then fetches from the fileserver. Logs cache stats per run to SQLite.
+**Worker**: mounts a FUSE filesystem (`go-fuse`) as the container rootfs, then runs containers via `runc`. When the container process touches a file, FUSE checks memory cache, then disk cache, then fetches from the fileserver. The core of the lazy-loading design is the [Lookup function](https://github.com/lastnameswayne/tinycontainer/blob/main/filesystem/dir.go#L96). When the container touches a file, the kernel calls Lookup, which checks memory cache, then disk cache, then fetches from the fileserver. The filesystem logs cache stats per run to SQLite.
 
-**CLI** -- `sway export` builds and syncs the image. `sway run` sends the script to the worker and streams back stdout/stderr.
+**CLI**: `sway export` builds and syncs the image. `sway run` sends the script to the worker and streams back stdout/stderr.
+
 
 ## Things I would do differently next time
-1. Lookup should only return metadata. This would have been more “canonical” to the filesystem, and what the kernel expects. Open and Read would actually serve the content.
+1. `Lookup` should only return metadata. This would have been more “canonical” to the filesystem, and what the kernel expects. `Open` and `Read` would actually serve the content.
 2. Auth on the endpoint, or atleast some verification. I realize I am letting people run arbitrary code on my VPS.
 3. Add S3 or similar instead of using my own fileserver. I would atleast make it a backing store to the fileserver.
-4. OverlayFS? 
+4. I would look into overlayFS. 
 5. The filesystem also assumes each user is running one script at a time. It does not support the same user running multiple files concurrently.
 
 ## Running it locally
