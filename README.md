@@ -7,6 +7,13 @@ A container runtime built around lazy-loading container filesystems via FUSE. Bu
 View recent runs at http://167.71.54.99:8444/
 
 ## Quick start example
+### Setup with an agent
+
+```bash
+claude "Read https://raw.githubusercontent.com/lastnameswayne/tinycontainer/main/SKILL.md and use it to set up sway for me"
+```
+
+### Setup manually
 1. Create a project with a `.py` executable file and corresponding `DockerFile`:
 ```python
 # app.py
@@ -19,6 +26,7 @@ print(f"svd: u={u.shape}, s={s.shape}")
 ```
 
 ```dockerfile
+# Dockerfile
 FROM python:3.10
 WORKDIR /app
 COPY requirements.txt .
@@ -57,7 +65,9 @@ sway run app.py # runs the script
 
 `sway` is the cli used to run the code! There are two commands, `sway export` and `sway run`:
 - `sway export` reads the docker file and sends all the required files to the fileserver. You only need to run this when you add a new dependency. It might take a few minutes to run.
-- `sway run <path_to_script>` runs the script in the cloud and retuns the result. 
+- `sway run <path_to_script>` runs the script in the cloud and retuns the result.
+
+
 
 ## Architecture
 Cold start latency should be bounded by the files a process actually touches, not by total image size. A scipy image is ~1.5GB. `import scipy; scipy.linalg.svd(...)` touches maybe 50MB of that. By mounting a FUSE filesystem as the container rootfs and fetching lazily, the container starts in seconds instead of waiting for a full image pull.
