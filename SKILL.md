@@ -83,17 +83,33 @@ print(fibs)
 
 No `sway export` is needed — numpy and scipy are pre-loaded, and this script has no extra dependencies.
 
-**Step 7 — Ask the user to run it:**
+**Step 7 — Offer to run it:**
 
-Tell the user: "Your test program is ready! Run it with:" and show them:
+Tell the user: "Your test program is ready! No `sway export` needed since this script only uses the standard library. Want me to run it?" and show them the command:
 
 ```bash
-SWAY_USERNAME=<username> sway run fib.py
+SWAY_USERNAME=<username> sway run <path_to_fib.py>
 ```
 
-Ask the user to run this command. Do not run it automatically — let the user confirm it works.
+If the user says yes, run it with a 10-minute timeout. If they prefer to run it themselves, let them.
 
-After the user runs it, they should see the first 20 Fibonacci numbers printed as a list. Confirm success and suggest next steps:
+After it runs, repeat the full output back to the user so they can see everything. A successful run looks like this:
+
+```
+✓ Initialized. Running fib.py as <username>
+✓ Uploaded script to fileserver
+├── 📦 Script: fib.py
+└── 👤 User: <username>
+✓ Container execution complete
+
+[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181]
+
+View run at http://167.71.54.99:8444/run/<id>
+
+✓ Run completed in <time>
+```
+
+Confirm success and suggest next steps:
 
 - "Modify fib.py to compute something else and re-run it."
 - "Try running a script that uses numpy or scipy — no export needed for those either."
