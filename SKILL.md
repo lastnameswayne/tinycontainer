@@ -14,64 +14,92 @@ description: >
 
 Run these commands in order. Do not skip steps. Do not search for other install instructions.
 
-**Step 1 — Install the CLI:**
+**Step 1 — Detect platform:**
 
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/sway_darwin_arm64.tar.gz | tar -xz
-sudo mv sway /usr/local/bin/
+uname -ms
+```
 
-# macOS (Intel)
-curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/sway_darwin_amd64.tar.gz | tar -xz
-sudo mv sway /usr/local/bin/
+Use the output to select the correct binary:
+- `Darwin arm64` → `sway_darwin_arm64.tar.gz`
+- `Darwin x86_64` → `sway_darwin_amd64.tar.gz`
+- `Linux x86_64` → `sway_linux_amd64.tar.gz`
 
-# Linux (amd64)
-curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/sway_linux_amd64.tar.gz | tar -xz
-sudo mv sway /usr/local/bin/
+**Step 2 — Install the CLI:**
+
+Download the correct binary from Step 1, then move it onto `PATH`. Try `sudo mv` first; if it fails (e.g. agent lacks sudo), fall back to `mkdir -p ~/bin && mv sway ~/bin/` and use the full path `"$HOME/bin/sway"` for all subsequent commands.
+
+```bash
+curl -L https://github.com/lastnameswayne/tinycontainer/releases/latest/download/<binary_from_step_1> | tar -xz
+sudo mv sway /usr/local/bin/ || (mkdir -p ~/bin && mv sway ~/bin/)
 ```
 
 Or with Go installed: `go install github.com/lastnameswayne/tinycontainer/sway@latest`
 
-**Step 2 — Set username:** Ask the user for their sway username, then set it:
-
-```bash
-export SWAY_USERNAME=<username>
-```
-
-**Step 3 — Confirm readiness:**
+**Step 3 — Confirm install:**
 
 ```bash
 sway --help
 ```
 
+If `sway: command not found`, the binary is likely in `~/bin/`. Use `"$HOME/bin/sway" --help` and use that full path for all subsequent commands.
+
+**Step 4 — Set username:** Ask the user for their sway username. Do not proceed until the user provides it.
+
+```bash
+export SWAY_USERNAME=<username>
+```
+
 ### Setup Rules
 
-- Always ask the user for their `SWAY_USERNAME` before running any commands. Do not guess or use a placeholder.
+- Always ask the user for their `SWAY_USERNAME` before running any `sway run` commands. Do not guess or use a placeholder.
 - Set `SWAY_USERNAME` as an environment variable before every `sway run` command, since shell state does not persist between tool calls.
+- If `sudo mv` fails due to permissions, use `~/bin/` as the install location and reference the full path.
+- Use a **10-minute timeout** (600000ms) for all `sway run` and `sway export` commands — they hit remote servers and can take time.
 
 ## After Setup
 
-Provide:
+Once the CLI is installed and username is confirmed, set up a test program.
 
-- Confirmation that the CLI is installed (`sway --help` succeeds).
-- The configured username.
-- 2-3 simple starter prompts tailored to running scripts, for example:
+**Step 5 — Ask where to create the test project:**
 
-  - "Create a Python script that computes the SVD of a random matrix and run it in the cloud."
-  - "Write a script that fetches the current Bitcoin price and run it remotely."
-  - "Run a Python one-liner that prints the first 20 Fibonacci numbers."
+Ask the user: "Should I create the test files (`fib.py`) in the current directory, or in a new directory?"
 
-## Use Sway
+Wait for the user's answer before creating any files.
 
-### Export (first time or when dependencies change)
+**Step 6 — Create the test script:**
 
-Before running scripts, the user needs a directory with a `Dockerfile` and their Python script. Export populates the fileserver with the container image layers:
+Create `fib.py` in the location the user chose:
 
-```bash
-sway export
+```python
+# fib.py
+a, b = 0, 1
+fibs = []
+for _ in range(20):
+    fibs.append(a)
+    a, b = b, a + b
+print(fibs)
 ```
 
-This only needs to run once per set of dependencies. It may take a few minutes.
+No `sway export` is needed — numpy and scipy are pre-loaded, and this script has no extra dependencies.
+
+**Step 7 — Ask the user to run it:**
+
+Tell the user: "Your test program is ready! Run it with:" and show them:
+
+```bash
+SWAY_USERNAME=<username> sway run fib.py
+```
+
+Ask the user to run this command. Do not run it automatically — let the user confirm it works.
+
+After the user runs it, they should see the first 20 Fibonacci numbers printed as a list. Confirm success and suggest next steps:
+
+- "Modify fib.py to compute something else and re-run it."
+- "Try running a script that uses numpy or scipy — no export needed for those either."
+- "Add other dependencies to a Dockerfile, then run `sway export` before running."
+
+## Use Sway
 
 ### Run a script
 
@@ -79,26 +107,48 @@ This only needs to run once per set of dependencies. It may take a few minutes.
 SWAY_USERNAME=<username> sway run <path_to_script>
 ```
 
-The script runs on a remote worker and stdout/stderr is streamed back.
+The script runs on a remote worker and stdout/stderr is streamed back. If the script only uses the standard library, numpy, or scipy, you can run it directly — no export needed. Always use a **10-minute timeout**.
+
+### Export (only when you have extra dependencies)
+
+If your script needs dependencies beyond numpy and scipy, create a `Dockerfile` and run `sway export` first. Always use `FROM python:3.10` — never use slim images (e.g. `python:3.12-slim`).
+
+```dockerfile
+FROM python:3.10
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app.py .
+CMD ["python", "app.py"]
+```
+
+```bash
+sway export
+```
+
+This only needs to run once per set of dependencies. It may take a few minutes. Only re-run when dependencies change. Always use a **10-minute timeout**.
 
 ### Workflow
 
-1. Ensure the working directory has a `Dockerfile` and a `.py` script.
-2. Run `sway export` if this is the first run or dependencies changed.
-3. Run `SWAY_USERNAME=<username> sway run <script.py>` to execute remotely.
+1. Write a `.py` script.
+2. If it only uses the standard library, numpy, or scipy: just run `SWAY_USERNAME=<username> sway run <script.py>`.
+3. If it needs other dependencies: create a `Dockerfile` (always `FROM python:3.10`, never slim), run `sway export`, then `sway run`.
 
 ### Rules
 
 - Always set `SWAY_USERNAME` before `sway run`.
-- Always run `sway export` before the first `sway run` in a new project.
-- Only re-run `sway export` when dependencies in the Dockerfile change.
+- **Do not run `sway export` if the script only needs numpy, scipy, or the standard library.**
+- Only run `sway export` when you have extra dependencies, and only re-run it when those dependencies change.
+- Always use `FROM python:3.10` in Dockerfiles. Never use slim images (e.g. `python:3.12-slim`).
 - The runtime only supports one script at a time per user.
+- Use a **10-minute timeout** (600000ms) for all `sway run` and `sway export` commands.
 
 ## Common Issues
 
 | Issue | Cause | Fix |
 |---|---|---|
-| `sway: command not found` | CLI not installed | Run the install commands from Step 1, then retry. |
+| `sway: command not found` | CLI not on PATH | If installed to `~/bin/`, use full path `"$HOME/bin/sway"` for all commands. |
+| `sudo: command not found` or permission denied on `sudo mv` | Agent lacks sudo access | Use `mkdir -p ~/bin && mv sway ~/bin/` and reference full path. |
 | Export fails | Docker not running or no Dockerfile in current directory | Ensure Docker is running and you are in a directory with a valid `Dockerfile`. |
 | Run fails with no output | Username not set | Set `SWAY_USERNAME` environment variable before running. |
 | Run hangs or times out | Worker or fileserver may be down | Check that the worker is reachable. View recent runs at http://167.71.54.99:8444/ |
