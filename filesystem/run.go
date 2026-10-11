@@ -150,6 +150,17 @@ var runcConfigTemplateStr = `{
             ]
         },
         {
+            "destination": "/var/tmp",
+            "type": "tmpfs",
+            "source": "tmpfs",
+            "options": [
+                "nosuid",
+                "nodev",
+                "mode=1777",
+                "size=512m"
+            ]
+        },
+        {
             "destination": "/dev/mqueue",
             "type": "mqueue",
             "source": "mqueue",
