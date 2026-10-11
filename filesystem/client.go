@@ -28,6 +28,7 @@ type listEntry struct {
 	IsDir     bool   `json:"is_dir"`
 	Size      int64  `json:"size"`
 	Mode      int64  `json:"mode"`
+	ModTime   int64  `json:"mod_time"`
 }
 
 // getContentsFromFileServer only gets the filenames and metadata - not the actual binary value of the files in the directory.
@@ -68,6 +69,7 @@ func (d *Directory) getContentsFromFileServer() ([]listEntry, error) {
 			IsDir:     e.IsDir,
 			Size:      e.Size,
 			Mode:      e.Mode,
+			ModTime:   e.ModTime,
 		}
 	}
 	return result, nil

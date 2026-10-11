@@ -27,9 +27,10 @@ type Directory struct {
 }
 
 type cachedMetadata struct {
-	hash string
-	mode int64
-	size int64
+	hash  string
+	mode  int64
+	size  int64
+	mtime uint64
 }
 
 var _ = (fusefs.NodeReaddirer)((*Directory)(nil))
@@ -84,7 +85,7 @@ func (d *Directory) fetchServerEntries(ctx context.Context) ([]fuse.DirEntry, er
 		} else {
 			f := &file{
 				path: filepath.Join(_cacheDir, entry.HashValue),
-				attr: fuse.Attr{Mode: uint32(entry.Mode), Size: uint64(entry.Size)},
+				attr: fuse.Attr{Mode: uint32(entry.Mode), Size: uint64(entry.Size), Mtime: fileMtime(entry.ModTime)},
 			}
 			d.addFileChild(ctx, entry.Name, entry.HashValue, f)
 		}
@@ -100,7 +101,7 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 		return nil, syscall.ENOENT
 	}
 	// Skip Python temp files - they'll never exist on server
-	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") || name == "__pycache__" {
+	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") || (name == "__pycache__" && !pycEnabled) {
 		return nil, syscall.ENOENT
 	}
 	// We can't cache the user's runscript, as it might change! Needs to be fetched fresh.
@@ -153,7 +154,7 @@ func (d *Directory) fromFileServer(ctx context.Context, name, key string, out *f
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		log.Printf("error writing file to disk cache: %v", err)
 	}
-	setFileEntryOut(out, f.attr.Mode, f.attr.Size)
+	setFileEntryOut(out, f.attr.Mode, f.attr.Size, f.attr.Mtime)
 	return inode, 0
 }
 
@@ -170,6 +171,7 @@ func mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryData []byte) *fil
 	}
 	file.attr.Mode = uint32(cachedMetadata.mode)
 	file.attr.Size = uint64(cachedMetadata.size)
+	file.attr.Mtime = cachedMetadata.mtime
 
 	return file
 }
@@ -184,13 +186,15 @@ func mapEntryToFile(entry KeyValue) *file {
 	}
 	file.attr.Mode = uint32(entry.Mode)
 	file.attr.Size = uint64(entry.Size)
+	file.attr.Mtime = fileMtime(entry.ModTime)
 
 	return file
 }
 
-func setFileEntryOut(out *fuse.EntryOut, mode uint32, size uint64) {
+func setFileEntryOut(out *fuse.EntryOut, mode uint32, size uint64, mtime uint64) {
 	out.Attr.Mode = mode | 0777
 	out.Attr.Size = size
+	out.Attr.Mtime = mtime
 	out.Attr.Nlink = 1
 	out.SetEntryTimeout(_kernelInodeTimeout)
 	out.SetAttrTimeout(_kernelInodeTimeout)
@@ -214,7 +218,7 @@ func (d *Directory) fromDiskCache(ctx context.Context, name, key string, out *fu
 	inode := d.NewInode(ctx, mapCachedEntryToFile(metadata, binaryData), fusefs.StableAttr{Ino: 0})
 	d.AddChild(name, inode, false)
 	d.mu.Unlock()
-	setFileEntryOut(out, uint32(metadata.mode), uint64(metadata.size))
+	setFileEntryOut(out, uint32(metadata.mode), uint64(metadata.size), metadata.mtime)
 	return inode, true
 }
 
@@ -246,9 +250,10 @@ func (d *Directory) addFileChild(ctx context.Context, name, hash string, f *file
 		return inode
 	}
 	d.keyDir[filepath.Join(d.path, name)] = cachedMetadata{
-		hash: hash,
-		size: int64(f.attr.Size),
-		mode: int64(f.attr.Mode),
+		hash:  hash,
+		size:  int64(f.attr.Size),
+		mode:  int64(f.attr.Mode),
+		mtime: f.attr.Mtime,
 	}
 	return inode
 }

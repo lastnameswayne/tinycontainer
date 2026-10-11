@@ -42,6 +42,7 @@ func (f *file) Getattr(ctx context.Context, fh fusefs.FileHandle, out *fuse.Attr
 	out.Mode = 0777
 	out.Nlink = 1 // Hardcoding to 1, assume no hard-links
 	out.Size = f.attr.Size
+	out.Mtime = f.attr.Mtime
 	const bs = 512
 	out.Blksize = bs
 	out.Blocks = (out.Size + bs - 1) / bs

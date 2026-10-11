@@ -297,6 +297,10 @@ func readLayer(f *os.File, dstDir string) ([]Symlink, error) {
 				logln(size)
 			}
 			outf.Close()
+			// keep the image's modification time
+			if err := os.Chtimes(target, header.ModTime, header.ModTime); err != nil {
+				return nil, fmt.Errorf("chtimes error: %v", err)
+			}
 		case tar.TypeSymlink, tar.TypeLink:
 			name := filepath.Clean(header.Name)
 			link := header.Linkname
