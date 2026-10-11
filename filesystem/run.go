@@ -44,7 +44,8 @@ var runcConfigTemplateStr = `{
         ],
         "env": [
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "TERM=xterm"
+            "TERM=xterm",
+            "HOME=/root"
         ],
         "cwd": "/",
         "capabilities": {
@@ -127,6 +128,28 @@ var runcConfigTemplateStr = `{
             ]
         },
         {
+            "destination": "/tmp",
+            "type": "tmpfs",
+            "source": "tmpfs",
+            "options": [
+                "nosuid",
+                "nodev",
+                "mode=1777",
+                "size=512m"
+            ]
+        },
+        {
+            "destination": "/root",
+            "type": "tmpfs",
+            "source": "tmpfs",
+            "options": [
+                "nosuid",
+                "nodev",
+                "mode=700",
+                "size=256m"
+            ]
+        },
+        {
             "destination": "/dev/mqueue",
             "type": "mqueue",
             "source": "mqueue",
@@ -163,15 +186,15 @@ var runcConfigTemplateStr = `{
     "linux": {
         "resources": {
             "memory": {
-                "limit": 1073741824,
-                "swap": 1073741824
+                "limit": 8589934592,
+                "swap": 8589934592
             },
             "cpu": {
                 "quota": 100000,
                 "period": 100000
             },
             "pids": {
-                "limit": 128
+                "limit": 4096
             },
             "devices": [
                 {
