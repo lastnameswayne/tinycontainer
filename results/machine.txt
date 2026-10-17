@@ -1,0 +1,31 @@
+date: 2026-10-13T05:35:16+00:00
+## worker box
+hostname: ip-172-31-34-46
+instance_type: m6i.2xlarge
+az: eu-north-1b
+kernel: 6.17.0-1017-aws
+os: Ubuntu 24.04.4 LTS
+cpu: Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+vcpus: 8
+ram: 30Gi
+disks: loop0      0 28.2M ;loop1      0 49.3M ;loop2      0   74M ;loop3      0 28.4M ;loop4      0 44.7M ;loop5      0   74M ;nvme0n1    0  300G Amazon Elastic Block Store;
+root_fs: /dev/root       290G   32G  258G  12% /
+docker: 29.9.0
+runc: runc version 1.5.2
+## store box (172.31.34.245)
+hostname: ip-172-31-34-245
+instance_type: m6i.xlarge
+az: eu-north-1b
+kernel: 6.17.0-1017-aws
+os: Ubuntu 24.04.4 LTS
+cpu: Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz
+vcpus: 4
+ram: 15Gi
+disks: loop0      0 28.2M ;loop1      0   74M ;loop2      0 49.3M ;loop3      0 28.4M ;loop4      0 44.7M ;nvme0n1    0  200G Amazon Elastic Block Store;
+root_fs: /dev/root       193G  156G   38G  81% /
+docker: 29.9.0
+runc: runc version 1.5.2
+## network worker -> store
+fileserver: https://172.31.34.245:9443   registry: 172.31.34.245:5000
+50 packets transmitted, 50 received, 0% packet loss, time 10186ms
+rtt min/avg/max/mdev = 0.108/0.128/0.174/0.011 ms

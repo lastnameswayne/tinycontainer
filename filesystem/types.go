@@ -9,6 +9,7 @@ var LookupStats struct {
 	MemoryCacheHits atomic.Int64 // Found in children map
 	DiskCacheHits   atomic.Int64 // Found in disk cache via KeyDir
 	ServerFetches   atomic.Int64 // Had to fetch from fileserver
+	NegativeLookups atomic.Int64 // Path does not exist (cached or from the fileserver)
 }
 
 // KeyValue represents the JSON structure for set requests

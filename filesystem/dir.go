@@ -49,7 +49,11 @@ func (d *Directory) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errn
 	d.mu.RUnlock()
 
 	// directories from the fileserver
+	start := time.Now()
 	serverEntries, err := d.fetchServerEntries(ctx)
+	if err == nil {
+		emitEvent("readdir", d.path, int64(len(serverEntries)), tierRemote, start, false, 0)
+	}
 	if err != nil {
 		log.Printf("error getting directory contents: %v", err)
 		return fusefs.NewListDirStream(memEntries), 0
@@ -85,6 +89,7 @@ func (d *Directory) fetchServerEntries(ctx context.Context) ([]fuse.DirEntry, er
 		} else {
 			f := &file{
 				path: filepath.Join(_cacheDir, entry.HashValue),
+				key:  entry.Key,
 				attr: fuse.Attr{Mode: uint32(entry.Mode), Size: uint64(entry.Size), Mtime: fileMtime(entry.ModTime)},
 			}
 			d.addFileChild(ctx, entry.Name, entry.HashValue, f)
@@ -95,13 +100,18 @@ func (d *Directory) fetchServerEntries(ctx context.Context) ([]fuse.DirEntry, er
 }
 
 func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
+	start := time.Now()
 	key := filepath.Join(d.path, name)
 	// Check if directory/file is known to be not found
 	if d.rootFS.isNotFound(key) {
+		LookupStats.NegativeLookups.Add(1)
+		emitEvent("lookup", key, 0, tierNegative, start, true, 0)
 		return nil, syscall.ENOENT
 	}
 	// Skip Python temp files - they'll never exist on server
 	if strings.Contains(name, ".pyc.") || strings.Contains(name, ".pyo.") || (name == "__pycache__" && !pycEnabled) {
+		LookupStats.NegativeLookups.Add(1)
+		emitEvent("lookup", key, 0, tierNegative, start, true, 0)
 		return nil, syscall.ENOENT
 	}
 	// We can't cache the user's runscript, as it might change! Needs to be fetched fresh.
@@ -114,12 +124,14 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 	if childDir, found := d.children[name]; found {
 		d.mu.RUnlock()
 		LookupStats.MemoryCacheHits.Add(1)
+		emitEvent("lookup", key, 0, tierMem, start, true, 0)
 		return &childDir.Inode, 0
 	}
 	d.mu.RUnlock()
 
 	// Directory/File is on the disk
-	if inode, ok := d.fromDiskCache(ctx, name, key, out); ok {
+	if inode, size, ok := d.fromDiskCache(ctx, name, key, out); ok {
+		emitEvent("lookup", key, size, tierDisk, start, true, 0)
 		return inode, 0
 	}
 
@@ -131,19 +143,24 @@ func (d *Directory) Lookup(ctx context.Context, name string, out *fuse.EntryOut)
 // For directories: acquires d.mu exclusively via defer.
 // For files: acquires d.mu exclusively only for child registration; WriteFile runs outside the lock.
 func (d *Directory) fromFileServer(ctx context.Context, name, key string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	entry, err := d.getEntryFromFileServer(name)
+	start := time.Now()
+	entry, hedge, err := d.getEntryFromFileServer(name)
 	if err == ErrNotFoundOnFileServer {
 		d.rootFS.addNotFound(key)
+		LookupStats.NegativeLookups.Add(1)
+		emitEvent("lookup", key, 0, tierNegative, start, false, hedge)
 		return nil, syscall.ENOENT
 	}
 	if err != nil {
 		log.Printf("error fetching file data for %s: %v", name, err)
+		emitEvent("lookup", key, 0, tierError, start, false, hedge)
 		return nil, syscall.EIO
 	}
 	LookupStats.ServerFetches.Add(1)
 	if entry.IsDir {
 		d.mu.Lock()
 		defer d.mu.Unlock()
+		emitEvent("lookup", key, 0, tierRemote, start, false, hedge)
 		return d.addDirChild(ctx, name), 0
 	}
 
@@ -153,8 +170,11 @@ func (d *Directory) fromFileServer(ctx context.Context, name, key string, out *f
 	d.mu.Unlock()
 	if err := os.WriteFile(filepath.Join(_cacheDir, entry.HashValue), entry.Value, 0644); err != nil {
 		log.Printf("error writing file to disk cache: %v", err)
+	} else {
+		diskCache.added(entry.HashValue, int64(len(entry.Value)))
 	}
 	setFileEntryOut(out, f.attr.Mode, f.attr.Size, f.attr.Mtime)
+	emitEvent("lookup", key, int64(len(entry.Value)), tierRemote, start, false, hedge)
 	return inode, 0
 }
 
@@ -164,10 +184,11 @@ func (d *Directory) Getattr(ctx context.Context, f fusefs.FileHandle, out *fuse.
 	return 0
 }
 
-func mapCachedEntryToFile(cachedMetadata cachedMetadata, binaryData []byte) *file {
+func mapCachedEntryToFile(key string, cachedMetadata cachedMetadata, binaryData []byte) *file {
 	file := &file{
 		Data: binaryData,
 		path: filepath.Join(_cacheDir, cachedMetadata.hash),
+		key:  key,
 	}
 	file.attr.Mode = uint32(cachedMetadata.mode)
 	file.attr.Size = uint64(cachedMetadata.size)
@@ -183,6 +204,7 @@ func mapEntryToFile(entry KeyValue) *file {
 	file := &file{
 		Data: entry.Value,
 		path: filepath.Join(_cacheDir, entry.HashValue),
+		key:  entry.Key,
 	}
 	file.attr.Mode = uint32(entry.Mode)
 	file.attr.Size = uint64(entry.Size)
@@ -202,33 +224,38 @@ func setFileEntryOut(out *fuse.EntryOut, mode uint32, size uint64, mtime uint64)
 
 // fromDiskCache checks keyDir (under RLock), reads the file from disk without holding
 // any lock, then registers the child (under exclusive lock).
-func (d *Directory) fromDiskCache(ctx context.Context, name, key string, out *fuse.EntryOut) (*fusefs.Inode, bool) {
+func (d *Directory) fromDiskCache(ctx context.Context, name, key string, out *fuse.EntryOut) (*fusefs.Inode, int64, bool) {
 	d.mu.RLock()
 	metadata, ok := d.keyDir[key]
 	d.mu.RUnlock()
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 	binaryData, err := os.ReadFile(filepath.Join(_cacheDir, metadata.hash))
 	if err != nil {
-		return nil, false
+		return nil, 0, false
 	}
+	diskCache.touched(metadata.hash)
 	LookupStats.DiskCacheHits.Add(1)
 	d.mu.Lock()
-	inode := d.NewInode(ctx, mapCachedEntryToFile(metadata, binaryData), fusefs.StableAttr{Ino: 0})
+	inode := d.NewInode(ctx, mapCachedEntryToFile(key, metadata, binaryData), fusefs.StableAttr{Ino: 0})
 	d.AddChild(name, inode, false)
 	d.mu.Unlock()
 	setFileEntryOut(out, uint32(metadata.mode), uint64(metadata.size), metadata.mtime)
-	return inode, true
+	return inode, int64(len(binaryData)), true
 }
 
 // scriptFromFileserver fetches the script from the server with zero entry/attr timeouts
 // so the kernel never caches it. Acquires d.mu exclusively to register the child with overwrite=true.
 func (d *Directory) scriptFromFileserver(ctx context.Context, name string, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	entry, err := d.getEntryFromFileServer(name)
+	start := time.Now()
+	key := filepath.Join(d.path, name)
+	entry, hedge, err := d.getEntryFromFileServer(name)
 	if err != nil {
+		emitEvent("lookup", key, 0, tierError, start, false, hedge)
 		return nil, syscall.EIO
 	}
+	emitEvent("lookup", key, int64(len(entry.Value)), tierRemote, start, false, hedge)
 
 	LookupStats.ServerFetches.Add(1)
 	out.SetEntryTimeout(0)

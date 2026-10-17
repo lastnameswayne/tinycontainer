@@ -12,6 +12,6 @@ EXPOSE 80
 
 # Define environment variable
 ENV NAME=World
-RUN pip install numpy plotext
+RUN pip install numpy "plotext<6"
 # Run app.py when the container launches
 CMD ["python", "app.py"]

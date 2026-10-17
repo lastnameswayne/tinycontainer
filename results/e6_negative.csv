@@ -1,0 +1,4 @@
+negative_lookups,count,per_run_median,latency_us_p50,latency_us_p90,latency_us_p99
+all,147033,237.0,178.0,2256.0,2457.0
+cached (no fileserver request),71766,148.0,0.0,1.0,1.0
+fileserver 404,75267,125.0,2167.0,2293.0,2736.3399999999965

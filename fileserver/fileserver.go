@@ -10,8 +10,48 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 )
+
+// Served-byte counters for the write-up experiments. GET /metrics returns them,
+// POST /metrics/reset zeroes them.
+var metrics struct {
+	FileFetches    atomic.Int64 // successful single-file GETs
+	FileValueBytes atomic.Int64 // raw file bytes in those responses (before JSON/base64)
+	DirFetches     atomic.Int64 // successful directory listings
+	NotFound       atomic.Int64 // 404s
+	ResponseBytes  atomic.Int64 // bytes written to the wire by /fetch, all responses
+}
+
+type countingWriter struct {
+	http.ResponseWriter
+}
+
+func (c countingWriter) Write(p []byte) (int, error) {
+	n, err := c.ResponseWriter.Write(p)
+	metrics.ResponseBytes.Add(int64(n))
+	return n, err
+}
+
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reset") {
+		metrics.FileFetches.Store(0)
+		metrics.FileValueBytes.Store(0)
+		metrics.DirFetches.Store(0)
+		metrics.NotFound.Store(0)
+		metrics.ResponseBytes.Store(0)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{
+		"file_fetches":     metrics.FileFetches.Load(),
+		"file_value_bytes": metrics.FileValueBytes.Load(),
+		"dir_fetches":      metrics.DirFetches.Load(),
+		"not_found":        metrics.NotFound.Load(),
+		"response_bytes":   metrics.ResponseBytes.Load(),
+	})
+}
 
 const defaultDirName = "fileserverfiles"
 
@@ -77,7 +117,8 @@ func (s *server) buildIndex() error {
 	return nil
 }
 
-func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleGet(rw http.ResponseWriter, r *http.Request) {
+	w := countingWriter{rw}
 	key := r.URL.Query().Get("filepath")
 
 	if key == "" {
@@ -99,6 +140,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 		s.mu.RUnlock()
 
 		if !ok {
+			metrics.NotFound.Add(1)
 			http.Error(w, "Directory not found", http.StatusNotFound)
 			return
 		}
@@ -120,6 +162,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(entries)
+		metrics.DirFetches.Add(1)
 		return
 	}
 
@@ -130,6 +173,7 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 	log.Printf("key=%s hash=%s ok=%v", key, hash, ok)
 
 	if !ok {
+		metrics.NotFound.Add(1)
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
@@ -155,7 +199,10 @@ func (s *server) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	entry.HashValue = hash
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entry)
+	if err := json.NewEncoder(w).Encode(entry); err == nil {
+		metrics.FileFetches.Add(1)
+		metrics.FileValueBytes.Add(int64(len(entry.Value)))
+	}
 }
 
 // KeyValue represents the JSON structure for set requests
@@ -259,16 +306,26 @@ func (s *server) handleSync(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	mux := http.NewServeMux()
-	s := NewServer()
+	dir := defaultDirName
+	if v := os.Getenv("FILESERVER_DIR"); v != "" {
+		dir = v
+	}
+	s := NewServerWithDir(dir)
 	mux.HandleFunc("/fetch", s.handleGet)
 	mux.HandleFunc("/batch-upload", s.handleSetBatch)
 	mux.HandleFunc("/sync", s.handleSync)
+	mux.HandleFunc("/metrics", handleMetrics)
+	mux.HandleFunc("/metrics/reset", handleMetrics)
 
+	addr := ":8443"
+	if v := os.Getenv("FILESERVER_ADDR"); v != "" {
+		addr = v
+	}
 	server := &http.Server{
-		Addr:    ":8443",
+		Addr:    addr,
 		Handler: mux,
 	}
 
-	log.Println("Starting server on https://localhost:8443")
+	log.Println("Starting server on", addr)
 	log.Fatal(server.ListenAndServeTLS("server.crt", "server.key"))
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,7 +46,8 @@ var runcConfigTemplateStr = `{
         "env": [
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "TERM=xterm",
-            "HOME=/root"
+            "HOME=/root",
+            "PYTHONUNBUFFERED=1"
         ],
         "cwd": "/",
         "capabilities": {
@@ -248,14 +250,31 @@ var runcConfigTemplateStr = `{
 const _runcTimeout = 30 * time.Minute
 
 type RunResponse struct {
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exit_code"`
-	Error    string `json:"error,omitempty"`
-	RunId    int    `json:"run_id"`
+	Stdout        string `json:"stdout"`
+	Stderr        string `json:"stderr"`
+	ExitCode      int    `json:"exit_code"`
+	Error         string `json:"error,omitempty"`
+	RunId         int    `json:"run_id"`
+	FirstOutputMs int64  `json:"first_output_ms"`
+	ExitMs        int64  `json:"exit_ms"`
+	HandlerMs     int64  `json:"handler_ms"`
+}
+
+// firstByteWriter collects stdout and records when the first byte arrived.
+type firstByteWriter struct {
+	buf   bytes.Buffer
+	first time.Time
+}
+
+func (w *firstByteWriter) Write(p []byte) (int, error) {
+	if w.first.IsZero() && len(p) > 0 {
+		w.first = time.Now()
+	}
+	return w.buf.Write(p)
 }
 
 func (fs *FS) Run(w http.ResponseWriter, r *http.Request) {
+	handlerStart := time.Now()
 	req := RunRequest{}
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
@@ -292,12 +311,28 @@ func (fs *FS) Run(w http.ResponseWriter, r *http.Request) {
 
 	// run runc command
 	startTime := time.Now()
+	runID := int64(0)
+	if db.DB != nil {
+		runID, err = db.StartRun(fileName, startTime, req.Username)
+		if err != nil {
+			fmt.Println("Error logging run start to database:", err)
+		}
+	}
+	currentRunID.Store(runID)
+	getAndResetLookupStats()
+
 	containerID := fmt.Sprintf("container-%d", time.Now().UnixNano())
 	ctx, cancel := context.WithTimeout(context.Background(), _runcTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sudo", "runc", "run", "--bundle", bundleDir, containerID)
 
-	stdout, err := cmd.Output()
+	stdoutW := &firstByteWriter{}
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = stdoutW
+	cmd.Stderr = &stderrBuf
+	err = cmd.Run()
+	exitTime := time.Now()
+	stdout := stdoutW.buf.Bytes()
 
 	exec.Command("sudo", "runc", "delete", containerID).Run()
 	duration := time.Since(startTime)
@@ -307,22 +342,44 @@ func (fs *FS) Run(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
-			stderrStr = string(exitErr.Stderr)
+			stderrStr = stderrBuf.String()
 		} else {
+			currentRunID.Store(0)
 			http.Error(w, "Failed to run container: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 
-	memoryHits, diskHits, serverFetches := getAndResetLookupStats()
+	// Timings are relative to when the request reached the handler, so a client can
+	// convert them to its own clock: client_pre = client_total - handler_ms.
+	exitMs := exitTime.Sub(handlerStart).Milliseconds()
+	firstOutputMs := exitMs
+	if !stdoutW.first.IsZero() {
+		firstOutputMs = stdoutW.first.Sub(handlerStart).Milliseconds()
+	}
 
-	username := req.Username
+	waitForEventDrain()
+	currentRunID.Store(0)
+	memoryHits, diskHits, serverFetches, negativeLookups := getAndResetLookupStats()
 
-	id := int64(0)
-	if db.DB != nil {
-		id, err = db.LogRun(fileName, startTime, duration.Milliseconds(),
-			stripANSI(string(stdout)), stderrStr, exitCode,
-			memoryHits, diskHits, serverFetches, username)
+	id := runID
+	handlerMs := time.Since(handlerStart).Milliseconds()
+	if db.DB != nil && runID != 0 {
+		err = db.FinishRun(runID, db.RunResult{
+			DurationMs:      duration.Milliseconds(),
+			FirstOutputMs:   firstOutputMs,
+			ExitMs:          exitMs,
+			HandlerMs:       handlerMs,
+			HandlerStartUs:  handlerStart.UnixMicro(),
+			Stdout:          stripANSI(string(stdout)),
+			Stderr:          stderrStr,
+			ExitCode:        exitCode,
+			MemoryHits:      memoryHits,
+			DiskHits:        diskHits,
+			ServerFetches:   serverFetches,
+			NegativeLookups: negativeLookups,
+			DroppedEvents:   droppedEvents.Swap(0),
+		})
 		if err != nil {
 			fmt.Println("Error logging run to database:", err)
 		}
@@ -330,10 +387,13 @@ func (fs *FS) Run(w http.ResponseWriter, r *http.Request) {
 
 	// write stdout back to user
 	response := RunResponse{
-		RunId:    int(id),
-		Stdout:   string(stdout),
-		Stderr:   stderrStr,
-		ExitCode: exitCode,
+		RunId:         int(id),
+		Stdout:        string(stdout),
+		Stderr:        stderrStr,
+		ExitCode:      exitCode,
+		FirstOutputMs: firstOutputMs,
+		ExitMs:        exitMs,
+		HandlerMs:     handlerMs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -351,9 +411,10 @@ func Stats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(runs)
 }
 
-func getAndResetLookupStats() (memoryHits, diskHits, serverFetches int64) {
+func getAndResetLookupStats() (memoryHits, diskHits, serverFetches, negativeLookups int64) {
 	memoryHits = LookupStats.MemoryCacheHits.Swap(0)
 	diskHits = LookupStats.DiskCacheHits.Swap(0)
 	serverFetches = LookupStats.ServerFetches.Swap(0)
+	negativeLookups = LookupStats.NegativeLookups.Swap(0)
 	return
 }

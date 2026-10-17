@@ -1,0 +1,12 @@
+app,first_added_rtt_where_docker_wins_ms,max_added_rtt_tested_ms
+d-duckdb,10,40
+d-polars,10,40
+dl-tensorflow,0,40
+dl-torch-mlp,2,40
+hello,40,40
+n-sympy,10,40
+reader,0,10
+s-sqlite,40,40
+testappscipy,2,40
+w-django,10,40
+w-fastapi,10,40

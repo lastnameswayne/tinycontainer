@@ -2,3 +2,6 @@
 .DS_Store
 testapps/testapp/
 filesystem/tinycontainer
+results/raw/
+results/image_files.csv
+scripts/exp.local.env

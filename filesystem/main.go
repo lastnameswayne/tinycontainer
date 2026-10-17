@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -34,10 +35,12 @@ func main() {
 	if err := db.Init("runs.db"); err != nil {
 		log.Printf("Warning: failed to initialize database: %v", err)
 	}
+	startEventWriter()
 
 	//init root
 	opts.Debug = *debug
 	root := NewFS(flag.Arg(0))
+	diskCache.load(_cacheDir)
 	root.root = root.newDir("/") // Explicitly set the root directory
 
 	// start up web server
@@ -48,12 +51,16 @@ func main() {
 	})
 	handler.HandleFunc("/stats", Stats)
 	handler.Handle("/", http.FileServer(http.Dir("./website")))
+	addr := ":8444"
+	if v := os.Getenv("WORKER_ADDR"); v != "" {
+		addr = v
+	}
 	httpserver := &http.Server{
-		Addr:    ":8444",
+		Addr:    addr,
 		Handler: handler,
 	}
 	go func() {
-		log.Println("Starting HTTP server on :8444")
+		log.Println("Starting HTTP server on", addr)
 		if err := httpserver.ListenAndServe(); err != nil {
 			log.Printf("HTTP server error: %v", err)
 		}
